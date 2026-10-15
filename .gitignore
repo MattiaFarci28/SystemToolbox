@@ -1,0 +1,24 @@
+# Memoria delle sessioni di lavoro
+.remember/
+
+# Log, storico e stato della finestra: contengono nome utente,
+# nome del computer e percorsi locali
+logs/
+
+# Configurazioni personali (i file .esempio invece si caricano)
+Toolbox.conf
+toolbox.conf
+
+# File locali
+macOS/macOS.sh
+Backup.lnk
+Comandi Attivazione.txt
+
+# App per il Dock: si costruisce sul Mac con crea-app.command
+System Toolbox.app/
+
+# File temporanei di Office e del sistema
+~$*
+Thumbs.db
+desktop.ini
+.DS_Store

@@ -1,0 +1,62 @@
+# ============================================================
+#   System Toolbox - configurazione
+#
+#   Per usarlo: rinomina questo file in  Toolbox.conf
+#   e mettilo accanto a Toolbox.ps1.
+#
+#   Il file NON viene eseguito: viene letto riga per riga e
+#   vengono accettate solo le chiavi elencate qui sotto. Una
+#   chiave sconosciuta viene ignorata in silenzio.
+#
+#   La riga di comando ha sempre la precedenza su questo file.
+# ============================================================
+
+# --- soglie degli avvisi ---------------------------------
+
+# Percentuale di riempimento del disco oltre la quale compare
+# un avviso, e quella oltre la quale diventa una criticita'.
+disco_avviso=80
+disco_critico=90
+
+# Percentuale di memoria in uso oltre la quale avvisare.
+ram_critica=90
+
+# Megabyte di file di paging in uso oltre i quali segnalare
+# che la memoria non basta per il carico attuale.
+# Su Windows si affianca alla percentuale di RAM in uso.
+# 
+# 
+swap_avviso_mb=1024
+
+# Numero di elementi di avvio automatico oltre il quale
+# segnalare che incidono sul tempo di accensione.
+avvii_avviso=12
+
+# Giorni di accensione continuata oltre i quali suggerire un
+# riavvio.
+uptime_avviso_giorni=7
+
+# --- preferenze ------------------------------------------
+
+# Quanti file di log conservare nella cartella logs/.
+log_da_conservare=15
+
+# Colori: auto | si | no | daltonici
+#   auto       colori solo se l'output e' un terminale
+#   no         nessun colore, utile per redirigere su file
+#   daltonici  blu e arancione al posto di verde e rosso, e
+#              ogni stato porta comunque un simbolo
+colori=auto
+
+# Lingua dei messaggi. Non usato al momento: esiste solo
+# l'italiano, e la chiave e' riservata per una traduzione futura.
+lingua=it
+
+# Tema dell'interfaccia grafica: auto | chiaro | scuro
+#   auto   segue l'impostazione di Windows (app chiare o scure)
+tema=auto
+
+# Interrogare Windows Update durante l'analisi completa.
+# E' la sezione piu' lenta: parte in parallelo, ma se non ti
+# interessa mettila a no e l'analisi non la tocca.
+analisi_aggiornamenti=si

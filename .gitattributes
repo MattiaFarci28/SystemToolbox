@@ -1,0 +1,22 @@
+# Fine riga fissati per tipo di file, indipendentemente dalle
+# impostazioni di Git sul computer che li scarica.
+# Gli script per Mac e Linux devono restare LF: con CRLF non partono.
+*.sh        text eol=lf
+*.command   text eol=lf
+*.esempio   text eol=lf
+*.md        text eol=lf
+*.svg       text eol=lf
+.gitignore      text eol=lf
+.gitattributes  text eol=lf
+
+# Gli script Windows con CRLF, come si aspetta cmd.exe
+*.ps1       text eol=crlf
+*.bat       text eol=crlf
+
+# File binari: mai toccati
+*.png       binary
+*.ico       binary
+*.icns      binary
+*.webp      binary
+*.docx      binary
+*.pdf       binary

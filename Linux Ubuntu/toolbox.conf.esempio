@@ -1,0 +1,117 @@
+# ============================================================
+#   System Toolbox - configurazione
+#
+#   Per usarlo: rinomina questo file in  toolbox.conf
+#   e mettilo accanto a toolbox.sh.
+#
+#   Il file NON viene eseguito: viene letto riga per riga e
+#   vengono accettate solo le chiavi elencate qui sotto. Una
+#   chiave sconosciuta viene ignorata in silenzio.
+#
+#   La riga di comando ha sempre la precedenza su questo file.
+# ============================================================
+
+# --- soglie degli avvisi ---------------------------------
+
+# Percentuale di riempimento del disco oltre la quale compare
+# un avviso, e quella oltre la quale diventa una criticita'.
+disco_avviso=80
+disco_critico=90
+
+# Percentuale di memoria in uso oltre la quale avvisare.
+ram_critica=90
+
+# Megabyte di swap in uso oltre i quali segnalare che la
+# memoria non basta per il carico attuale.
+# Su Linux si affianca alla percentuale di RAM: swap in uso
+# elevato significa che la memoria fisica non basta per il
+# carico attuale.
+swap_avviso_mb=1024
+
+# Numero di elementi di avvio oltre il quale segnalare.
+# Non usato su Linux: qui l'indicatore che conta e' il tempo di
+# avvio misurato da systemd-analyze, mostrato dall'analisi
+# completa con le unita' piu' lente. Contare i servizi abilitati
+# darebbe un avviso su qualsiasi installazione normale.
+avvii_avviso=12
+
+# Giorni di accensione continuata oltre i quali suggerire un
+# riavvio.
+uptime_avviso_giorni=7
+
+# --- preferenze ------------------------------------------
+
+# Quanti file di log conservare nella cartella logs/.
+log_da_conservare=15
+
+# Colori: auto | si | no | daltonici
+#   auto       colori solo se l'output e' un terminale
+#   no         nessun colore, utile per redirigere su file
+#   daltonici  blu e arancione al posto di verde e rosso, e
+#              ogni stato porta comunque un simbolo
+colori=auto
+
+# Lingua dei messaggi. Non usato al momento: esiste solo
+# l'italiano, e la chiave e' riservata per una traduzione futura.
+lingua=it
+
+# Cornici e barre: ascii | utf8
+#   ascii  # . = -   leggibile ovunque, anche via SSH, in
+#          console TTY e dentro WSL. E' il predefinito.
+#   utf8   blocchi pieni e tratti continui: piu' bello, ma
+#          richiede un terminale in UTF-8 con un font adatto.
+cornici=ascii
+
+# Simboli di stato: ascii | emoji
+#   ascii  [ok] [!] [X]   e' il predefinito
+#   emoji  come il vecchio Ubuntu.sh. Piu' immediato in un
+#          terminale grafico, illeggibile in console TTY o via
+#          SSH con LANG=C: per questo non e' il predefinito.
+#          Il livello di rischio resta scritto a parole accanto
+#          al pallino, il colore da solo non basta.
+# Si puo' attivare anche al volo con  --emoji
+simboli=ascii
+
+# --- analisi ---------------------------------------------
+
+# Interrogare i repository durante l'analisi completa per
+# contare gli aggiornamenti disponibili. Richiede la rete.
+analisi_aggiornamenti=si
+
+# Per quante ore riutilizzare quel risultato prima di
+# richiederlo. Due analisi ravvicinate non hanno motivo di
+# ripetere la stessa attesa.
+cache_aggiornamenti_ore=6
+
+# Tempo massimo, in secondi, per misurare la dimensione di una
+# singola cartella. du deve attraversare tutto l'albero: su una
+# home molto piena, o su un disco meccanico, puo' durare
+# minuti. Alla scadenza il valore viene mostrato come
+# "oltre X GB", cioe' dichiarato parziale invece che sbagliato.
+misura_max_secondi=12
+
+# --- interfaccia -----------------------------------------
+
+# Chiedere conferma con una finestra di dialogo, invece che
+# con [s/N] nel terminale, per le operazioni che non sono
+# marcate [sicuro]. Richiede zenity o kdialog e una sessione
+# grafica: via SSH o in TTY si torna da solo al terminale.
+conferme_grafiche=no
+
+# Notifica di sistema al termine di una serie di operazioni.
+# Richiede notify-send (pacchetto libnotify-bin).
+notifica_fine=si
+
+# Barra di avanzamento durante le operazioni lunghe.
+# Un dist-upgrade da dieci minuti con l'output silenziato non
+# distingue "sta lavorando" da "e' bloccato". Con si, l'output
+# del gestore pacchetti diventa una riga che si aggiorna; il
+# registro completo finisce comunque nel log.
+# Si spegne da sola quando l'output non e' un terminale
+# (report, cron, --json).
+avanzamento=si
+
+# Ridimensionare la finestra del terminale all'avvio.
+# Non usato su Linux: la chiave esiste solo perche' la
+# configurazione resti la stessa sui tre sistemi.
+ridimensiona_terminale=no

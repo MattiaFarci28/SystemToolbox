@@ -1,0 +1,50 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+<defs>
+<radialGradient id="bg" cx="50%" cy="42%" r="70%"><stop offset="0" stop-color="#0E1A2E"/><stop offset="1" stop-color="#050A14"/></radialGradient>
+<linearGradient id="gear" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#5BD6FF"/><stop offset="1" stop-color="#2F6BFF"/></linearGradient>
+<linearGradient id="gTop" gradientUnits="userSpaceOnUse" x1="723.6" y1="220.8" x2="300.4" y2="220.8"><stop offset="0" stop-color="#5BD6FF"/><stop offset="1" stop-color="#7BE36A"/></linearGradient>
+<linearGradient id="gSx" gradientUnits="userSpaceOnUse" x1="154.0" y1="474.4" x2="365.6" y2="840.9"><stop offset="0" stop-color="#22C55E"/><stop offset="1" stop-color="#FFC23A"/></linearGradient>
+<linearGradient id="gDx" gradientUnits="userSpaceOnUse" x1="658.4" y1="840.9" x2="870.0" y2="474.4"><stop offset="0" stop-color="#FF7A1A"/><stop offset="1" stop-color="#2F80FF"/></linearGradient>
+<linearGradient id="lente" gradientUnits="userSpaceOnUse" x1="-80" y1="-80" x2="-110" y2="120"><stop offset="0" stop-color="#7BE36A"/><stop offset="1" stop-color="#22C55E"/></linearGradient>
+<linearGradient id="scopa" gradientUnits="userSpaceOnUse" x1="0" y1="-140" x2="0" y2="96"><stop offset="0" stop-color="#5BD6FF"/><stop offset="1" stop-color="#2F80FF"/></linearGradient>
+<linearGradient id="chiave" gradientUnits="userSpaceOnUse" x1="0" y1="-122" x2="0" y2="135"><stop offset="0" stop-color="#FFC23A"/><stop offset="1" stop-color="#FF7A1A"/></linearGradient>
+<filter id="glow" x="-30%" y="-30%" width="160%" height="160%"><feGaussianBlur stdDeviation="14" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+<filter id="glowLieve" x="-30%" y="-30%" width="160%" height="160%"><feGaussianBlur stdDeviation="7" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+<mask id="tacca"><rect x="-200" y="-200" width="400" height="400" fill="white"/><rect x="-19" y="-150" width="38" height="92" rx="5" fill="black"/></mask>
+</defs>
+<g transform="translate(512 512) scale(0.86) translate(-512 -512)">
+<g filter="url(#glowLieve)">
+<path d="M723.6 220.8 A360 360 0 0 0 300.4 220.8" stroke="url(#gTop)" stroke-width="44" stroke-linecap="round" fill="none"/>
+<path d="M154.0 474.4 A360 360 0 0 0 365.6 840.9" stroke="url(#gSx)" stroke-width="44" stroke-linecap="round" fill="none"/>
+<path d="M658.4 840.9 A360 360 0 0 0 870.0 474.4" stroke="url(#gDx)" stroke-width="44" stroke-linecap="round" fill="none"/>
+</g>
+<g filter="url(#glow)">
+<path d="M465.7 325.7 L474.6 287.1 L549.4 287.1 L558.3 325.7 L611.0 347.5 L644.6 326.5 L697.5 379.4 L676.5 413.0 L698.3 465.7 L736.9 474.6 L736.9 549.4 L698.3 558.3 L676.5 611.0 L697.5 644.6 L644.6 697.5 L611.0 676.5 L558.3 698.3 L549.4 736.9 L474.6 736.9 L465.7 698.3 L413.0 676.5 L379.4 697.5 L326.5 644.6 L347.5 611.0 L325.7 558.3 L287.1 549.4 L287.1 474.6 L325.7 465.7 L347.5 413.0 L326.5 379.4 L379.4 326.5 L413.0 347.5Z" fill="url(#gear)"/>
+</g>
+<circle cx="512" cy="512" r="150" fill="#07101F"/>
+<g fill="none" stroke="#EAF4FF" stroke-width="16" stroke-linecap="round" stroke-linejoin="round">
+<rect x="414" y="430" width="196" height="138" rx="16"/>
+<path d="M512 568 V600 M466 602 H558"/>
+</g>
+<path d="M436 500 H472 L490 466 L512 538 L532 488 L544 500 H588" fill="none" stroke="#4FD8FF" stroke-width="12" stroke-linecap="round" stroke-linejoin="round" filter="url(#glowLieve)"/>
+<g transform="translate(200.2 332.0)" filter="url(#glowLieve)">
+<line x1="-42" y1="42" x2="-112" y2="112" stroke="url(#lente)" stroke-width="40" stroke-linecap="round"/>
+<circle cx="0" cy="0" r="66" fill="#06140C" stroke="url(#lente)" stroke-width="30"/>
+<path d="M-30 -14 A34 34 0 0 1 -6 -32" stroke="#9BF59A" stroke-width="12" stroke-linecap="round" fill="none" opacity=".9"/>
+</g>
+<g transform="translate(823.8 332.0) rotate(38) scale(1.18)" filter="url(#glowLieve)">
+<rect x="-12" y="-140" width="24" height="120" rx="12" fill="url(#scopa)"/>
+<rect x="-40" y="-34" width="80" height="28" rx="10" fill="url(#scopa)"/>
+<path d="M-40 -2 H40 L60 86 Q62 96 52 96 H-52 Q-62 96 -60 86 Z" fill="url(#scopa)"/>
+<path d="M-14 30 L-20 96 M14 30 L20 96" stroke="#07101F" stroke-width="10" stroke-linecap="round"/>
+</g>
+<path d="M697.1666049839541 286.0 Q697.1666049839541 312.0 723.1666049839541 312.0 Q697.1666049839541 312.0 697.1666049839541 338.0 Q697.1666049839541 312.0 671.1666049839541 312.0 Q697.1666049839541 312.0 697.1666049839541 286.0Z" fill="#7FE3FF" filter="url(#glowLieve)"/>
+<path d="M743.1666049839541 337.0 Q743.1666049839541 352.0 758.1666049839541 352.0 Q743.1666049839541 352.0 743.1666049839541 367.0 Q743.1666049839541 352.0 728.1666049839541 352.0 Q743.1666049839541 352.0 743.1666049839541 337.0Z" fill="#7FE3FF" filter="url(#glowLieve)"/>
+<g transform="translate(512.0 872.0) rotate(45)" filter="url(#glowLieve)">
+<g mask="url(#tacca)">
+<circle cx="0" cy="-62" r="60" fill="url(#chiave)"/>
+</g>
+<rect x="-23" y="-40" width="46" height="175" rx="23" fill="url(#chiave)"/>
+</g>
+</g>
+</svg>
