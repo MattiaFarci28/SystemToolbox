@@ -199,7 +199,7 @@ Copia `Toolbox.conf.esempio` in `Toolbox.conf`.
 powershell -ExecutionPolicy Bypass -File "test\Collaudo.ps1"
 ```
 
-97 controlli. Non toccano il sistema: usano cartelle e una chiave di registro di prova, poi rimosse.
+99 controlli. Non toccano il sistema: usano cartelle e una chiave di registro di prova, poi rimosse.
 Lo strumento è stato provato anche su un PC Windows reale.
 
 ## File

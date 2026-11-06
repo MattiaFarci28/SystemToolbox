@@ -90,6 +90,15 @@ function ConvertFrom-WingetTabella {
     return $out
 }
 
+# winget restituisce codici a 32 bit come numeri negativi
+# (-1978335189): in esadecimale (0x8A15002B) si riconoscono e si
+# cercano nella documentazione. 0xFFFFFFFFL e non 0xFFFFFFFF:
+# senza la L PowerShell lo legge come -1 e la maschera non serve.
+function Format-CodiceUscita {
+    param([long]$Codice)
+    return ('0x{0:X8}' -f ($Codice -band 0xFFFFFFFFL))
+}
+
 function Get-RunningBrowser {
     $nomi = @('msedge','chrome','firefox','brave','opera','vivaldi')
     return @(Get-Process -Name $nomi -ErrorAction SilentlyContinue |
@@ -940,9 +949,18 @@ $script:TaskRegistry = @(
             $ctx.Note(('Aggiornamento di {0}...' -f $p.Nome))
             $u = Invoke-LongNative -File $wg.Source -Arguments @('upgrade','--id',$p.Id,'--exact','--silent',
                     '--accept-package-agreements','--accept-source-agreements','--disable-interactivity') -TimeoutSec 1800 -Ctx $ctx
+            $hex = Format-CodiceUscita $u.ExitCode
             if ($u.TimedOut)          { $ctx.Fail(('{0}: interrotto per timeout' -f $p.Nome)) }
             elseif ($u.ExitCode -eq 0) { $ctx.Items++ }
-            else                       { $ctx.Fail(('{0}: winget ha restituito il codice {1}' -f $p.Nome, $u.ExitCode)) }
+            elseif ($hex -eq '0x8A15002B') {
+                # "Nessun aggiornamento applicabile": winget vede una versione
+                # piu' nuova ma non puo' installarla sopra quella presente,
+                # di solito perche' e' stata installata da un altro programma.
+                # Non e' un guasto: si salta e si dice come fare.
+                $ctx.Skipped++
+                $ctx.Note(('{0}: winget non puo'' aggiornarla (installata in altro modo): si aggiorna dal programma stesso o dal sito del produttore' -f $p.Nome))
+            }
+            else { $ctx.Fail(('{0}: winget ha restituito il codice {1}' -f $p.Nome, $hex)) }
         }
         $ctx.Note(('{0} applicazioni aggiornate' -f $ctx.Items))
     }

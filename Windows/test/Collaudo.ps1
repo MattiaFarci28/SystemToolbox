@@ -383,6 +383,8 @@ Check 'identificativo' $t[1].Id '7zip.7zip'
 Check 'versione disponibile' $t[1].Disponibile '24.08'
 Check 'nome troncato con i puntini' $t[2].Id 'Esempio.Lungo'
 Check 'testo vuoto' @(ConvertFrom-WingetTabella -Testo '').Count 0
+Check 'codice di winget in esadecimale' (Format-CodiceUscita -1978335189) '0x8A15002B'
+Check 'codice positivo invariato' (Format-CodiceUscita 1) '0x00000001'
 
 # ------------------------------------------------------------
 Titolo 'Aggiornamenti nel registro delle operazioni'
