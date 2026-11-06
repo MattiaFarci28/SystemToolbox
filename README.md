@@ -2,6 +2,11 @@
   <img src="assets/banner.png" width="720" alt="System Toolbox: analisi, pulizia e manutenzione per Windows, macOS e Linux">
 </p>
 
+<p align="center">
+  <a href="https://github.com/MattiaFarci28/SystemToolbox/actions/workflows/collaudo.yml"><img src="https://github.com/MattiaFarci28/SystemToolbox/actions/workflows/collaudo.yml/badge.svg" alt="Collaudo"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/licenza-MIT-blue" alt="Licenza MIT"></a>
+</p>
+
 Strumento per **analizzare, pulire e mantenere** il computer performante.
 Funziona su **Windows**, **macOS** e **Linux**.
 
