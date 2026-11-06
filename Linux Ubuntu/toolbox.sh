@@ -128,7 +128,7 @@ esegui_insieme() {
         return 0
     fi
 
-    clear
+    [ -t 1 ] && clear
     ui_title "$titolo"
     echo ""
     printf '  %sOperazioni previste:%s\n\n' "$C_WHITE" "$C_OFF"
@@ -254,7 +254,7 @@ Procedere?" || { ui_dim "Annullato."; return 0; }
 #   SELEZIONE PERSONALIZZATA
 # ============================================================
 selezione_personalizzata() {
-    clear
+    [ -t 1 ] && clear
     ui_title "Selezione personalizzata"
     echo ""
     local tutti; tutti=$(task_all_ids | tr '\n' ' ')
@@ -301,7 +301,7 @@ fi
 #   MENU
 # ============================================================
 mostra_menu() {
-    clear
+    [ -t 1 ] && clear
     ui_title "System Toolbox - Linux / Ubuntu"
     if [ "$TB_WSL" -eq 1 ]; then
         printf '   %sAmbiente WSL rilevato: le voci non applicabili verranno saltate.%s\n' "$C_YELLOW" "$C_OFF"

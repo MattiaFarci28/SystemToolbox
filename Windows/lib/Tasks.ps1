@@ -520,7 +520,7 @@ $script:TaskRegistry = @(
         if ($lib -lt 0) { $lib = 0 }
         $ctx.Bytes += $lib
         if (Test-Path -LiteralPath $cartella -ErrorAction SilentlyContinue) {
-            $ctx.Fail(('Windows.old non rimossa del tutto: restano {0}. Prova con Pulizia disco come amministratore.' -f (Format-Bytes $dopo)))
+            $ctx.Fail(('Windows.old non rimossa del tutto: restano {0}. Rimuovila da Impostazioni > Sistema > Archiviazione > File temporanei.' -f (Format-Bytes $dopo)))
         } else {
             $ctx.Items++
             $ctx.Note(('Windows.old rimossa: {0} liberati' -f (Format-Bytes $lib)))

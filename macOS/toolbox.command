@@ -145,7 +145,7 @@ esegui_insieme() {
         return 0
     fi
 
-    clear
+    [ -t 1 ] && clear
     ui_title "$titolo"
     echo ""
     printf '  %sOperazioni previste:%s\n\n' "$C_WHITE" "$C_OFF"
@@ -268,7 +268,7 @@ Procedere?" || { ui_dim "Annullato."; return 0; }
 #   SELEZIONE PERSONALIZZATA
 # ============================================================
 selezione_personalizzata() {
-    clear
+    [ -t 1 ] && clear
     ui_title "Selezione personalizzata"
     echo ""
     local tutti; tutti=$(task_all_ids | tr '\n' ' ')
@@ -308,7 +308,7 @@ selezione_personalizzata() {
 # ============================================================
 gestione_backup_ios() {
     local base="$TB_HOME/Library/Application Support/MobileSync/Backup"
-    clear
+    [ -t 1 ] && clear
     ui_title "Backup di iPhone e iPad"
 
     if [ ! -d "$base" ]; then
@@ -421,7 +421,7 @@ fi
 #   MENU
 # ============================================================
 mostra_menu() {
-    clear
+    [ -t 1 ] && clear
     ui_title "System Toolbox - macOS"
     echo ""
     printf '   %sANALISI%s\n' "$C_GREEN" "$C_OFF"
