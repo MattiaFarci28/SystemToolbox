@@ -16,7 +16,7 @@ jobs:
     name: Windows
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Suite di collaudo (Windows PowerShell 5.1)
         shell: powershell
@@ -24,22 +24,28 @@ jobs:
           & .\Windows\test\Collaudo.ps1
           exit $LASTEXITCODE
 
+      # Stesso interprete per cui e' scritto lo strumento (Windows
+      # PowerShell 5.1) e versione del modulo fissata: le regole cambiano
+      # fra una versione e l'altra, e il risultato deve essere
+      # riproducibile anche in locale.
       - name: PSScriptAnalyzer
-        shell: pwsh
+        shell: powershell
         run: |
-          if (-not (Get-Module -ListAvailable PSScriptAnalyzer)) {
-            Install-Module PSScriptAnalyzer -Scope CurrentUser -Force
-          }
-          $r = Invoke-ScriptAnalyzer -Path Windows -Recurse -Severity Error, Warning `
-                 -Settings Windows/PSScriptAnalyzerSettings.psd1
-          $r | Format-Table ScriptName, Line, RuleName, Message -AutoSize -Wrap
-          if ($r) { exit 1 }
+          [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+          Install-PackageProvider -Name NuGet -MinimumVersion 2.8.5.201 -Scope CurrentUser -Force | Out-Null
+          Install-Module PSScriptAnalyzer -RequiredVersion 1.25.0 -Scope CurrentUser -Force
+          Import-Module PSScriptAnalyzer -RequiredVersion 1.25.0
+          $r = @(Invoke-ScriptAnalyzer -Path Windows -Recurse -Severity Error, Warning `
+                   -Settings Windows\PSScriptAnalyzerSettings.psd1)
+          $r | Format-Table ScriptName, Line, RuleName, Message -AutoSize -Wrap | Out-String -Width 300
+          "Segnalazioni: $($r.Count)"
+          if ($r.Count -gt 0) { exit 1 }
 
   macos:
     name: macOS
     runs-on: macos-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       # /bin/bash e' la 3.2 che Apple installa: e' la versione che
       # il progetto deve supportare, non quella di Homebrew.
@@ -51,7 +57,7 @@ jobs:
     name: Linux
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Suite di collaudo
         working-directory: Linux Ubuntu
