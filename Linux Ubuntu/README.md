@@ -188,7 +188,7 @@ bash test/collaudo.sh
 ```
 
 125 controlli, non toccano il sistema.
-Mai eseguiti su una macchina reale: finestre grafiche, voce di menu, needrestart, DNF, pacman, zypper.
+Lo strumento è stato provato anche su un PC Ubuntu reale. DNF, pacman e zypper non sono ancora stati provati.
 
 ## File
 

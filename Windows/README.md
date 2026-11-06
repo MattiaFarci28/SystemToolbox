@@ -168,7 +168,7 @@ powershell -ExecutionPolicy Bypass -File "test\Collaudo.ps1"
 ```
 
 57 controlli, non toccano il sistema.
-Mai eseguiti dal vero, solo in simulazione: reset di rete, SFC, DISM, punto di ripristino, Windows.old.
+Lo strumento è stato provato anche su un PC Windows reale.
 
 ## File
 

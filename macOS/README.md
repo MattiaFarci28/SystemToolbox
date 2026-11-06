@@ -168,8 +168,8 @@ Non usate su macOS: `ram_critica` (conta lo swap), `avanzamento` (esiste solo su
 bash test/collaudo.sh
 ```
 
-104 controlli, non toccano il sistema. Verificano la logica e la lettura di output reali di Catalina.
-I comandi propri di macOS (`tmutil`, `diskutil`, `osascript`, la creazione dell'app) **non sono mai stati eseguiti**.
+104 controlli, non toccano il sistema.
+Lo strumento è stato provato anche su un Mac reale.
 
 ## File
 
