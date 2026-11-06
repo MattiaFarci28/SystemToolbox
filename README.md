@@ -2,8 +2,6 @@
   <img src="assets/banner.png" width="720" alt="System Toolbox: analisi, pulizia e manutenzione per Windows, macOS e Linux">
 </p>
 
-# System Toolbox
-
 Strumento per **analizzare, pulire e mantenere** il computer performante.
 Funziona su **Windows**, **macOS** e **Linux**.
 
