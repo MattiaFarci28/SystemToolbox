@@ -60,3 +60,12 @@ tema=auto
 # E' la sezione piu' lenta: parte in parallelo, ma se non ti
 # interessa mettila a no e l'analisi non la tocca.
 analisi_aggiornamenti=si
+
+# Giorni oltre i quali un backup e' considerato vecchio e compare
+# un avviso nell'analisi completa.
+backup_avviso_giorni=7
+
+# Applicazioni da NON aggiornare con "Aggiorna tutto", separate da
+# virgola. Si indica l'identificativo di winget, quello che compare
+# fra parentesi nell'elenco (per esempio Mozilla.Firefox).
+app_escluse=

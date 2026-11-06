@@ -258,6 +258,13 @@ try {
         Write-Log ('--- ' + $titolo + ' (GUI)') 'STEP'
         Show-Analisi -Rapida:$rapida | Out-Null
     }
+    elseif ($modo -eq 'diagnosi') {
+        $tipo = [string]$taskIds[0]
+        Write-Title 'Diagnosi guidata'
+        Write-Log ('--- Diagnosi guidata (GUI): ' + $tipo) 'STEP'
+        Show-Diagnosi -Tipo $tipo
+        if ($script:DiagProposta) { $sync.Coda.Enqueue(@{ Tipo = 'proposta'; Nome = $script:DiagProposta }) }
+    }
     else {
         $tasks = @()
         foreach ($id in $taskIds) {
@@ -404,6 +411,10 @@ $script:Xaml = @'
           <TextBlock x:Name="TxtSottotitolo" Foreground="@TESTO2@" FontSize="11.5" FontFamily="Segoe UI" Margin="0,2,0,0"/>
         </StackPanel>
         <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+          <Button x:Name="BtnDiagnosi" Content="Diagnosi guidata" Style="{StaticResource Piccolo}" Margin="0,0,8,0"
+                  ToolTip="Internet non va, PC lento, disco pieno: controlla solo cio' che spiega il problema"/>
+          <Button x:Name="BtnAvvio" Content="Programmi all'avvio" Style="{StaticResource Piccolo}" Margin="0,0,16,0"
+                  ToolTip="Spegni o riattiva i programmi che partono con Windows"/>
           <Border x:Name="ChipAdmin" Background="@CHIPFONDO@" BorderBrush="@CHIPBORDO@" BorderThickness="1" CornerRadius="10" Padding="10,3" Margin="0,0,14,0">
             <TextBlock x:Name="TxtAdmin" Text="Amministratore" Foreground="@CHIPTESTO@" FontSize="11" FontFamily="Segoe UI"/>
           </Border>
@@ -897,6 +908,13 @@ function Update-OutputGui {
                 $s.RebootRichiesto = [bool]$m.Reboot
                 Show-SintesiGui -Ok $m.Ok -Parziali $m.Parziali -Falliti $m.Falliti -Byte $m.Byte
             }
+            'proposta' {
+                # La diagnosi suggerisce un insieme: lo si seleziona,
+                # ma a eseguirlo e' sempre chi usa lo strumento.
+                Select-PresetGui -Nome $m.Nome
+                Add-SegmentoGui -Testo '' -Colore 'Gray' -ACapo $true
+                Add-SegmentoGui -Testo '   Operazione consigliata gia'' selezionata a sinistra: premi "Esegui selezionati" per avviarla.' -Colore 'Cyan' -ACapo $true
+            }
             'fine'  { $s.Finito = $true }
         }
     }
@@ -924,14 +942,15 @@ function Start-LavoroGui {
     $s.BtnAnalisi.IsEnabled       = $false
     $s.BtnAnalisiRapida.IsEnabled = $false
     $s.BtnPulisciOut.IsEnabled    = $false
+    $s.BtnDiagnosi.IsEnabled      = $false
     $s.BtnInterrompi.IsEnabled    = $true
 
     $s.StimeCoda = @()
-    if ($Modo -ne 'analisi') {
+    if ($Modo -eq 'task') {
         foreach ($id in $Ids) { $s.StimeCoda += [int](Get-Task -Id $id).Stima }
     }
 
-    if ($Modo -eq 'analisi') {
+    if ($Modo -eq 'analisi' -or $Modo -eq 'diagnosi') {
         $s.Barra.IsIndeterminate = $true
         Set-StatoGui 'Raccolta dati in corso...'
     } else {
@@ -983,6 +1002,7 @@ function Complete-LavoroGui {
     $s.BtnAnalisi.IsEnabled       = $true
     $s.BtnAnalisiRapida.IsEnabled = $true
     $s.BtnPulisciOut.IsEnabled    = $true
+    $s.BtnDiagnosi.IsEnabled      = $true
     $s.BtnInterrompi.IsEnabled    = $false
     Set-StatoGui 'Completato'
 
@@ -1046,7 +1066,8 @@ function Start-Gui {
     foreach ($nome in @('TxtSottotitolo','TxtAdmin','ChipAdmin','ChkSimula','PanelPreset','PanelTask',
                         'ChkRipristino','TxtRipristino','TxtConteggio','RtbOut','Barra','TxtStato','BtnPulisciOut',
                         'BtnLog','BtnAnalisiRapida','BtnAnalisi','BtnInterrompi','BtnEsegui',
-                        'TxtCerca','TxtCercaVuoto','BtnReport','PanSintesi','TxtSintesiTitolo','TxtSintesiDett')) {
+                        'TxtCerca','TxtCercaVuoto','BtnReport','PanSintesi','TxtSintesiTitolo','TxtSintesiDett',
+                        'BtnDiagnosi','BtnAvvio')) {
         $s[$nome] = $finestra.FindName($nome)
     }
     $script:Sync = $s
@@ -1089,7 +1110,7 @@ function Start-Gui {
         'Riavvio'  = @{ Testo = '[riavvio] '; Colore = 'Magenta' }
     }
 
-    foreach ($categoria in @('Pulizia','Rete','Manutenzione')) {
+    foreach ($categoria in @('Pulizia','Rete','Manutenzione','Aggiornamenti')) {
         $intestazione = New-Object System.Windows.Controls.TextBlock
         $intestazione.Text       = $categoria.ToUpper()
         $intestazione.Foreground = New-PennelloConsole 'DarkGray'
@@ -1152,6 +1173,8 @@ function Start-Gui {
            Desc = 'Riscrive Winsock e gli stack TCP/IP e IPv6. Serve a riparare una rete che non funziona piu'', non come manutenzione: azzera IP statici e componenti di VPN e antivirus, e richiede il riavvio.' },
         @{ Testo = 'Manutenzione';     Nome = 'Manutenzione'
            Desc = 'Controlla e ripara i file di sistema di Windows con SFC e DISM. Operazione lunga da avviare quando non ti serve il PC, utile se vedi errori o crash ricorrenti.' },
+        @{ Testo = 'Aggiorna tutto';   Nome = 'Aggiornamenti'
+           Desc = 'Installa gli aggiornamenti di Windows e delle applicazioni (winget). Puo'' richiedere molto tempo e il riavvio. Le applicazioni da tenere ferme si indicano con app_escluse nel file di configurazione.' },
         @{ Testo = 'Nessuna';          Nome = 'Nessuna'; Desc = '' },
         @{ Testo = 'Dettagli';         Nome = '__dettagli'; Desc = '' }
     )
@@ -1197,6 +1220,11 @@ function Start-Gui {
     $s.BtnAnalisi.Add_Click({       Start-LavoroGui -Modo 'analisi' })
     $s.BtnAnalisiRapida.Add_Click({ Start-LavoroGui -Modo 'analisi' -Rapida })
     $s.BtnEsegui.Add_Click({        Invoke-EsecuzioneGui })
+    $s.BtnDiagnosi.Add_Click({
+        $tipo = Select-DiagnosiGui
+        if ($tipo) { Start-LavoroGui -Modo 'diagnosi' -Ids @($tipo) }
+    })
+    $s.BtnAvvio.Add_Click({         Show-AvvioGui })
     $s.BtnPulisciOut.Add_Click({    Clear-OutputGui })
     $s.BtnInterrompi.Add_Click({
         $script:Sync.Annulla = $true
@@ -1436,4 +1464,174 @@ function Invoke-EsecuzioneGui {
     $ids += @($scelti | ForEach-Object { $_.Id } | Where-Object { $_ -ne 'maint_restorepoint' })
 
     Start-LavoroGui -Modo 'task' -Ids $ids
+}
+
+# ============================================================
+#   FINESTRE SECONDARIE
+#   Usano gli stili della finestra principale, cosi' seguono il
+#   tema chiaro o scuro senza una seconda definizione.
+# ============================================================
+function New-FinestraSecondaria {
+    param([string]$Titolo)
+    $s = $script:Sync
+    $w = New-Object System.Windows.Window
+    $w.Title = $Titolo
+    if ($s.Finestra.IsVisible) {
+        $w.Owner = $s.Finestra
+        $w.WindowStartupLocation = 'CenterOwner'
+    } else {
+        $w.WindowStartupLocation = 'CenterScreen'
+    }
+    $w.ResizeMode = 'NoResize'
+    $w.SizeToContent = 'WidthAndHeight'
+    $w.Background = $s.Finestra.Background
+    $w.Icon = $s.Finestra.Icon
+    $w.FontFamily = New-Object System.Windows.Media.FontFamily('Segoe UI')
+    return $w
+}
+
+function New-PulsanteGui {
+    param([string]$Testo, $Tag = $null, [switch]$Primario)
+    $s = $script:Sync
+    $b = New-Object System.Windows.Controls.Button
+    $b.Content = $Testo
+    $b.Tag = $Tag
+    try {
+        if ($Primario) { $b.Style = $s.Finestra.FindResource('Primario') }
+        else { $b.Style = $s.Finestra.FindResource([System.Windows.Controls.Button]) }
+    } catch { }
+    return $b
+}
+
+# ------------------------------------------------------------
+#   Scelta del problema per la diagnosi guidata
+# ------------------------------------------------------------
+function Select-DiagnosiGui {
+    $s = $script:Sync
+    $w = New-FinestraSecondaria -Titolo 'Diagnosi guidata'
+    $p = New-Object System.Windows.Controls.StackPanel
+    $p.Margin = New-Object System.Windows.Thickness(22)
+    $t = New-Object System.Windows.Controls.TextBlock
+    $t.Text = 'Qual e'' il problema?'
+    $t.FontSize = 15
+    $t.Foreground = $s.TxtSottotitolo.Foreground
+    $t.Margin = New-Object System.Windows.Thickness(0, 0, 0, 12)
+    [void]$p.Children.Add($t)
+    foreach ($o in @(@('rete', 'Internet non va'), @('lento', 'Il PC e'' lento'), @('disco', 'Il disco e'' pieno'))) {
+        $b = New-PulsanteGui -Testo $o[1] -Tag $o[0]
+        $b.MinWidth = 280
+        $b.Margin = New-Object System.Windows.Thickness(0, 0, 0, 8)
+        $b.HorizontalContentAlignment = 'Left'
+        $b.Add_Click({
+            param($mittente, $evento)
+            $f = [System.Windows.Window]::GetWindow($mittente)
+            $f.Tag = [string]$mittente.Tag
+            $f.DialogResult = $true
+        })
+        [void]$p.Children.Add($b)
+    }
+    $w.Content = $p
+    if ($w.ShowDialog()) { return [string]$w.Tag }
+    return $null
+}
+
+# ------------------------------------------------------------
+#   Programmi all'avvio
+#   Una casella per voce: spuntata = parte con Windows. Si
+#   applicano solo le differenze, dopo una conferma.
+# ------------------------------------------------------------
+function Show-AvvioGui {
+    $s = $script:Sync
+    $voci = @(Get-SysStartup | Where-Object { $_.Chiave })
+    if ($voci.Count -eq 0) {
+        [void][System.Windows.MessageBox]::Show($s.Finestra, 'Nessun programma all''avvio gestibile da qui.', 'Programmi all''avvio')
+        return
+    }
+    $w = New-FinestraSecondaria -Titolo 'Programmi all''avvio'
+    $radice = New-Object System.Windows.Controls.StackPanel
+    $radice.Margin = New-Object System.Windows.Thickness(22)
+
+    $t = New-Object System.Windows.Controls.TextBlock
+    $t.Text = 'Spunta i programmi che devono partire con Windows. Il programma non viene toccato: si riattiva in qualsiasi momento, da qui o da Gestione attivita''. L''effetto vale dal prossimo avvio.'
+    $t.TextWrapping = 'Wrap'
+    $t.MaxWidth = 520
+    $t.Foreground = $s.TxtSottotitolo.Foreground
+    $t.Margin = New-Object System.Windows.Thickness(0, 0, 0, 12)
+    [void]$radice.Children.Add($t)
+
+    $elenco = New-Object System.Windows.Controls.StackPanel
+    $caselle = @()
+    foreach ($v in $voci) {
+        $c = New-Object System.Windows.Controls.CheckBox
+        # Testo semplice e non stringa: come contenuto diretto, WPF
+        # leggerebbe "_" come scorciatoia da tastiera e lo toglierebbe
+        # da nomi come "ApacheTomcatMonitor10.1_Tomcat10".
+        $etichetta = New-Object System.Windows.Controls.TextBlock
+        $etichetta.Text = ('{0}   ({1})' -f $v.Nome, (Format-StartupOrigin $v.Origine))
+        $c.Content = $etichetta
+        $c.IsChecked = [bool]$v.Attivo
+        $c.Margin = New-Object System.Windows.Thickness(0, 3, 0, 3)
+        try { $c.Style = $s.Finestra.FindResource([System.Windows.Controls.CheckBox]) } catch { }
+        [void]$elenco.Children.Add($c)
+        $caselle += $c
+    }
+    $scorri = New-Object System.Windows.Controls.ScrollViewer
+    $scorri.VerticalScrollBarVisibility = 'Auto'
+    $scorri.MaxHeight = 380
+    $scorri.Width = 540
+    $scorri.Content = $elenco
+    [void]$radice.Children.Add($scorri)
+
+    $barra = New-Object System.Windows.Controls.StackPanel
+    $barra.Orientation = 'Horizontal'
+    $barra.HorizontalAlignment = 'Right'
+    $barra.Margin = New-Object System.Windows.Thickness(0, 14, 0, 0)
+    $chiudi = New-PulsanteGui -Testo 'Chiudi'
+    $chiudi.Margin = New-Object System.Windows.Thickness(0, 0, 8, 0)
+    $chiudi.Add_Click({ param($m, $e) [System.Windows.Window]::GetWindow($m).Close() })
+    $applica = New-PulsanteGui -Testo 'Applica' -Primario
+    $applica.Add_Click({ param($m, $e) Invoke-ApplicaAvvioGui -Finestra ([System.Windows.Window]::GetWindow($m)) })
+    [void]$barra.Children.Add($chiudi)
+    [void]$barra.Children.Add($applica)
+    [void]$radice.Children.Add($barra)
+
+    $script:AvvioGui = @{ Voci = $voci; Caselle = $caselle }
+    $w.Content = $radice
+    [void]$w.ShowDialog()
+    $script:AvvioGui = $null
+}
+
+function Invoke-ApplicaAvvioGui {
+    param($Finestra)
+    $s = $script:Sync
+    $d = $script:AvvioGui
+    $cambi = @()
+    for ($i = 0; $i -lt $d.Voci.Count; $i++) {
+        $voluto = [bool]$d.Caselle[$i].IsChecked
+        if ($voluto -ne [bool]$d.Voci[$i].Attivo) { $cambi += @{ Voce = $d.Voci[$i]; Attivo = $voluto } }
+    }
+    if ($cambi.Count -eq 0) { $Finestra.Close(); return }
+
+    $nl = [Environment]::NewLine
+    $testo = 'Verranno modificati:' + $nl + $nl
+    foreach ($c in $cambi) {
+        $testo += ('  {0}  {1}' -f $(if ($c.Attivo) { 'riattivare' } else { 'spegnere  ' }), $c.Voce.Nome) + $nl
+    }
+    if ($s.ChkSimula.IsChecked) {
+        [void][System.Windows.MessageBox]::Show($Finestra, ($testo + $nl + 'Simulazione attiva: nessuna modifica applicata.'), 'Programmi all''avvio')
+        return
+    }
+    $r = [System.Windows.MessageBox]::Show($Finestra, ($testo + $nl + 'Procedere?'), 'Programmi all''avvio',
+            [System.Windows.MessageBoxButton]::YesNo, [System.Windows.MessageBoxImage]::Question)
+    if ($r -ne [System.Windows.MessageBoxResult]::Yes) { return }
+
+    $ok = 0; $errori = @()
+    foreach ($c in $cambi) {
+        try { Set-AvvioAttivo -Voce $c.Voce -Attivo $c.Attivo; $ok++ }
+        catch { $errori += ('{0}: {1}' -f $c.Voce.Nome, $_.Exception.Message) }
+    }
+    $esito = ('{0} voci modificate. L''effetto vale dal prossimo avvio.' -f $ok)
+    if ($errori.Count -gt 0) { $esito += $nl + $nl + 'Non modificate:' + $nl + ($errori -join $nl) }
+    [void][System.Windows.MessageBox]::Show($Finestra, $esito, 'Programmi all''avvio')
+    $Finestra.Close()
 }

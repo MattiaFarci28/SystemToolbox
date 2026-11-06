@@ -358,6 +358,115 @@ function Invoke-ManutenzioneConsigliata {
     return (Invoke-Insieme -Titolo 'Manutenzione consigliata' -Tasks $tasks -SenzaConferma:$SenzaConferma)
 }
 
+# ------------------------------------------------------------
+#   Programmi all'avvio
+#   Stesso meccanismo della scheda Avvio di Gestione attivita':
+#   il programma non viene toccato e si riattiva quando si vuole.
+# ------------------------------------------------------------
+function Invoke-GestioneAvvio {
+    Clear-Host
+    Write-Title 'Programmi all''avvio'
+    $voci = @(Get-SysStartup | Where-Object { $_.Chiave })
+    if ($voci.Count -eq 0) { Write-Host ''; Write-Ok 'Nessun programma all''avvio gestibile da qui.'; return }
+    Write-Host ''
+    $i = 1
+    foreach ($v in $voci) {
+        Write-Host ('   {0,2})  ' -f $i) -NoNewline
+        if ($v.Attivo) { Write-Host '[attivo]' -ForegroundColor Green -NoNewline }
+        else           { Write-Host '[spento]' -ForegroundColor DarkGray -NoNewline }
+        $nome = $v.Nome
+        if ($nome.Length -gt 40) { $nome = $nome.Substring(0, 37) + '...' }
+        Write-Host ('  {0,-42}' -f $nome) -NoNewline
+        Write-Host (Format-StartupOrigin $v.Origine) -ForegroundColor DarkGray
+        $i++
+    }
+    Write-Host ''
+    Write-Dim 'Indica i numeri da cambiare, separati da virgola: quelli attivi vengono spenti,'
+    Write-Dim 'quelli spenti riattivati. Il programma non viene toccato. Invio per uscire.'
+    Write-Host '  Selezione: ' -NoNewline -ForegroundColor White
+    $sel = Read-Host
+    if ([string]::IsNullOrWhiteSpace($sel)) { return }
+
+    $scelte = New-Object System.Collections.ArrayList
+    foreach ($pezzo in ($sel -split '[,; ]+')) {
+        $n = 0
+        if ($pezzo -and [int]::TryParse($pezzo, [ref]$n) -and $n -ge 1 -and $n -le $voci.Count) {
+            [void]$scelte.Add($voci[$n - 1])
+        } elseif ($pezzo) { Write-Warn ('Valore non valido: {0}' -f $pezzo) }
+    }
+    if ($scelte.Count -eq 0) { return }
+
+    Write-Host ''
+    foreach ($v in $scelte) {
+        $azione = 'spegnere  '
+        if (-not $v.Attivo) { $azione = 'riattivare' }
+        Write-Host ('   {0}  {1}' -f $azione, $v.Nome)
+    }
+    Write-Host ''
+    if (-not (Read-YesNo 'Procedere?')) { Write-Dim 'Annullato.'; return }
+    if ($script:Simula) { Write-Dim 'Simulazione attiva: nessuna modifica applicata.'; return }
+
+    $ok = 0; $ko = 0
+    foreach ($v in $scelte) {
+        try { Set-AvvioAttivo -Voce $v -Attivo (-not $v.Attivo); $ok++ }
+        catch { $ko++; Write-Err ('{0}: {1}' -f $v.Nome, $_.Exception.Message) }
+    }
+    Write-Host ''
+    if ($ok -gt 0) { Write-Ok ('{0} voci modificate: l''effetto vale dal prossimo avvio.' -f $ok) }
+    if ($ko -gt 0) { Write-Err ('{0} voci non modificate.' -f $ko) }
+}
+
+# ------------------------------------------------------------
+#   Diagnosi guidata
+# ------------------------------------------------------------
+function Get-NomeInsieme {
+    param([string]$Nome)
+    switch ($Nome) {
+        'RetePulizia'   { return 'Rete - refresh leggero' }
+        'PuliziaSicura' { return 'Pulizia sicura' }
+        default         { return $Nome }
+    }
+}
+
+function Invoke-DiagnosiGuidata {
+    Clear-Host
+    Write-Title 'Diagnosi guidata'
+    Write-Host ''
+    Write-Host '     1)  Internet non va'
+    Write-Host '     2)  Il PC e'' lento'
+    Write-Host '     3)  Il disco e'' pieno'
+    Write-Host ''
+    Write-Host '   Scelta: ' -NoNewline -ForegroundColor White
+    $tipo = switch ((Read-Host).Trim()) { '1' { 'rete' } '2' { 'lento' } '3' { 'disco' } default { $null } }
+    if (-not $tipo) { return }
+    Write-Log ('--- Diagnosi guidata: ' + $tipo) 'STEP'
+    Show-Diagnosi -Tipo $tipo
+    if (-not $script:DiagProposta) { return }
+    $nome = Get-NomeInsieme $script:DiagProposta
+    Write-Host ''
+    if (Read-YesNo ('Eseguire ora: {0}?' -f $nome) -DefaultSi) {
+        Invoke-Insieme -Titolo $nome -Tasks (Get-TaskSet -Nome $script:DiagProposta) -SenzaConferma | Out-Null
+    }
+}
+
+# Notifica di Windows. Serve alla modalita' automatica: chi la
+# pianifica non guarda la console, e va avvisato solo quando
+# qualcosa e' peggiorato rispetto all'ultima volta.
+function Show-NotificaWindows {
+    param([string]$Testo)
+    try {
+        Add-Type -AssemblyName System.Windows.Forms, System.Drawing -ErrorAction Stop
+        $n = New-Object System.Windows.Forms.NotifyIcon
+        $fileIcona = Join-Path $Radice 'icona.ico'
+        if (Test-Path -LiteralPath $fileIcona) { $n.Icon = New-Object System.Drawing.Icon($fileIcona) }
+        else { $n.Icon = [System.Drawing.SystemIcons]::Information }
+        $n.Visible = $true
+        $n.ShowBalloonTip(10000, 'System Toolbox', $Testo, [System.Windows.Forms.ToolTipIcon]::Warning)
+        Start-Sleep -Seconds 6
+        $n.Dispose()
+    } catch { }
+}
+
 # ============================================================
 #   MODALITA' NON INTERATTIVA
 # ============================================================
@@ -376,6 +485,9 @@ if ($Auto) {
         Write-Title 'Esecuzione automatica terminata'
         Write-Dim ('Log: ' + $LogPath)
         if ($script:TB_REPORT) { Write-Dim ('Report: ' + $script:TB_REPORT) }
+    }
+    if ($script:AvvisiNuovi -gt 0) {
+        Show-NotificaWindows ('{0} nuovi problemi rilevati: apri il report o il log.' -f $script:AvvisiNuovi)
     }
     Write-Log 'Fine modalita automatica' 'INFO'
     Export-Report
@@ -412,9 +524,15 @@ function Show-Menu {
     Write-Host 'punto di ripristino, SFC, DISM' -ForegroundColor DarkGray
     Write-Host '     8)  Manutenzione consigliata    ' -NoNewline
     Write-Host 'pulizia sicura + refresh rete' -ForegroundColor DarkGray
+    Write-Host '     A)  Aggiorna tutto              ' -NoNewline
+    Write-Host 'Windows Update e applicazioni (winget)' -ForegroundColor DarkGray
     Write-Host ''
     Write-Host '   ALTRO' -ForegroundColor Green
     Write-Host '     9)  Selezione personalizzata'
+    Write-Host '     D)  Diagnosi guidata            ' -NoNewline
+    Write-Host 'Internet, lentezza, disco pieno' -ForegroundColor DarkGray
+    Write-Host '     V)  Programmi all''avvio         ' -NoNewline
+    Write-Host 'spegni o riattiva' -ForegroundColor DarkGray
     Write-Host '     L)  Apri la cartella dei log'
     Write-Host '     S)  Modalita'' simulazione: ' -NoNewline
     if ($script:Simula) { Write-Host 'ATTIVA' -ForegroundColor Magenta }
@@ -456,6 +574,20 @@ while ($true) {
         }
         '8' { Invoke-ManutenzioneConsigliata | Out-Null; Wait-Enter }
         '9' { Invoke-Personalizzata; Wait-Enter }
+        'A' {
+            $avv = 'Installa gli aggiornamenti di Windows e delle applicazioni. Puo'' richiedere molto tempo e il riavvio: salva il lavoro aperto. Le applicazioni da tenere ferme si indicano con app_escluse nel file di configurazione.'
+            $ris = Invoke-Insieme -Titolo 'Aggiorna tutto' -Tasks (Get-TaskSet -Nome 'Aggiornamenti') -Avvertenza $avv
+            if (@($ris | Where-Object { $_.Reboot }).Count -gt 0 -and -not $script:Simula) {
+                Write-Host ''
+                if (Read-YesNo 'Gli aggiornamenti richiedono il riavvio. Riavviare ora?') {
+                    shutdown.exe /r /t 60 /c 'Riavvio per completare gli aggiornamenti.'
+                    Write-Dim 'Per annullare: shutdown /a'
+                }
+            }
+            Wait-Enter
+        }
+        'D' { Invoke-DiagnosiGuidata; Wait-Enter }
+        'V' { Invoke-GestioneAvvio; Wait-Enter }
         'L' {
             $cartella = Join-Path $Radice 'logs'
             if (Test-Path -LiteralPath $cartella) { Start-Process explorer.exe $cartella }

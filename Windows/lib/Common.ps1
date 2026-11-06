@@ -11,7 +11,7 @@
 
 Set-StrictMode -Version 1.0
 
-$script:TB_VERSIONE = '1.0.0'
+$script:TB_VERSIONE = '1.1.0'
 
 # ============================================================
 #   RILANCIO
@@ -86,6 +86,8 @@ $script:CFG = @{
     uptime_avviso_giorni = 7
     log_da_conservare    = 15
     analisi_aggiornamenti = 'si'
+    backup_avviso_giorni = 7
+    app_escluse          = ''
     colori               = 'auto'
     tema                 = 'auto'
     lingua               = 'it'
@@ -96,7 +98,7 @@ function Import-Configurazione {
     if (-not (Test-Path -LiteralPath $Percorso -ErrorAction SilentlyContinue)) { return }
 
     $numeriche = @('disco_avviso','disco_critico','ram_critica','swap_avviso_mb',
-                   'avvii_avviso','uptime_avviso_giorni','log_da_conservare')
+                   'avvii_avviso','uptime_avviso_giorni','log_da_conservare','backup_avviso_giorni')
     $testuali  = @{ colori = @('auto','si','no','daltonici'); lingua = @('it','en')
                     analisi_aggiornamenti = @('si','no')
                     tema = @('auto','chiaro','scuro') }
@@ -115,6 +117,10 @@ function Import-Configurazione {
             if ([int]::TryParse($v, [ref]$n)) { $script:CFG[$k] = $n }
         } elseif ($testuali.ContainsKey($k)) {
             if ($testuali[$k] -contains $v) { $script:CFG[$k] = $v }
+        } elseif ($k -eq 'app_escluse') {
+            # Solo i caratteri degli identificativi dei pacchetti: il
+            # valore finisce in una riga di comando.
+            if ($v -match '^[A-Za-z0-9._+@, -]*$') { $script:CFG[$k] = $v }
         }
         # chiavi sconosciute: ignorate di proposito
     }
@@ -289,4 +295,100 @@ function Compare-Storico {
         }
     }
     return $null
+}
+
+# Elenco "app_escluse" della configurazione.
+function Get-AppEscluse {
+    return @(([string]$script:CFG['app_escluse']) -split '[,\s]+' | Where-Object { $_ })
+}
+
+# ============================================================
+#   NOVITA' RISPETTO ALL'ANALISI PRECEDENTE
+#   Gli avvisi dell'ultima analisi restano in un file, uno per
+#   tipo di analisi: la rapida controlla meno cose, e confrontata
+#   con una completa farebbe sembrare "risolto" cio' che
+#   semplicemente non guarda.
+# ============================================================
+function Get-PercorsoAvvisi {
+    param([string]$Modo = 'completa')
+    if (-not $script:TB_STORICO) { return $null }
+    return (Join-Path (Split-Path -Parent $script:TB_STORICO) ('avvisi-{0}.txt' -f $Modo))
+}
+
+# I numeri cambiano fra un'analisi e l'altra (disco al 91%, poi al
+# 92%): per riconoscere lo stesso avviso si confronta il testo con
+# le cifre sostituite da #.
+function Get-ChiaveAvviso {
+    param([string]$Testo)
+    return ($Testo -replace '[0-9][0-9.,]*', '#')
+}
+
+# Restituisce $null alla prima analisi: senza un termine di
+# confronto tutto sembrerebbe nuovo.
+function Get-AvvisiConfronto {
+    param($Avvisi, [string]$Modo = 'completa')
+    $f = Get-PercorsoAvvisi -Modo $Modo
+    if (-not $f -or -not (Test-Path -LiteralPath $f -ErrorAction SilentlyContinue)) { return $null }
+    $prima = @(Get-Content -LiteralPath $f -Encoding UTF8 -ErrorAction SilentlyContinue | Where-Object { $_ })
+    $ora   = @(@($Avvisi) | Where-Object { $_ })
+    $chiaviOra = @($ora | ForEach-Object { Get-ChiaveAvviso $_ })
+    return [pscustomobject]@{
+        Nuovi   = @($ora | Where-Object { $prima -notcontains (Get-ChiaveAvviso $_) })
+        Risolti = @($prima | Where-Object { $chiaviOra -notcontains $_ }).Count
+    }
+}
+
+function Save-Avvisi {
+    param($Avvisi, [string]$Modo = 'completa')
+    $f = Get-PercorsoAvvisi -Modo $Modo
+    if (-not $f) { return }
+    try {
+        @(@($Avvisi) | Where-Object { $_ } | ForEach-Object { Get-ChiaveAvviso $_ }) |
+            Set-Content -LiteralPath $f -Encoding UTF8 -ErrorAction Stop
+    } catch { }
+}
+
+# ============================================================
+#   STORICO DELLA SALUTE DEI DISCHI
+#   Una riga per disco e per analisi in logs\smart.txt:
+#     epoch|disco|stato|usura%|errori
+#   Lo stato SMART dice "va bene o no" in quel momento; e'
+#   l'andamento dell'usura e degli errori che avvisa per tempo.
+# ============================================================
+function Compare-SmartStorico {
+    param([string]$Disco, [string]$Stato, $Usura = $null, $Errori = $null)
+    $ris = [pscustomobject]@{ Giorni = $null; Peggioramenti = @() }
+    if (-not $script:TB_STORICO) { return $ris }
+    $f = Join-Path (Split-Path -Parent $script:TB_STORICO) 'smart.txt'
+    $Disco = $Disco -replace '\|', '/'
+    $u = '-'; if ($null -ne $Usura)  { $u = [string][int]$Usura }
+    $e = '-'; if ($null -ne $Errori) { $e = [string][long]$Errori }
+    $ora = [long][double]::Parse((Get-Date -UFormat %s))
+
+    $prec = $null
+    if (Test-Path -LiteralPath $f -ErrorAction SilentlyContinue) {
+        foreach ($r in (Get-Content -LiteralPath $f -Encoding UTF8 -ErrorAction SilentlyContinue)) {
+            $p = $r -split '\|'
+            if ($p.Count -ge 5 -and $p[1] -eq $Disco) { $prec = $p }
+        }
+    }
+    if ($prec) {
+        $t = 0L
+        if ([long]::TryParse($prec[0], [ref]$t)) { $ris.Giorni = [int](($ora - $t) / 86400) }
+        $pegg = @()
+        $up = 0; $ep = 0L
+        if ($u -ne '-' -and [int]::TryParse($prec[3], [ref]$up) -and ([int]$u - $up) -ge 5) {
+            $pegg += ('usura salita dal {0}% al {1}%' -f $up, $u)
+        }
+        if ($e -ne '-' -and [long]::TryParse($prec[4], [ref]$ep) -and [long]$e -gt $ep) {
+            $pegg += ('{0} nuovi errori registrati dal disco' -f ([long]$e - $ep))
+        }
+        $ris.Peggioramenti = $pegg
+    }
+    try {
+        Add-Content -LiteralPath $f -Value ('{0}|{1}|{2}|{3}|{4}' -f $ora, $Disco, $Stato, $u, $e) -Encoding UTF8 -ErrorAction Stop
+        $tutte = @(Get-Content -LiteralPath $f -ErrorAction Stop)
+        if ($tutte.Count -gt 400) { $tutte | Select-Object -Last 200 | Set-Content -LiteralPath $f -Encoding UTF8 }
+    } catch { }
+    return $ris
 }

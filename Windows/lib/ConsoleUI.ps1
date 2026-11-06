@@ -626,6 +626,9 @@ function Show-Analisi {
     param([switch]$Rapida)
 
     $avvisi = New-Object System.Collections.Generic.List[string]
+    $script:AvvisiNuovi = 0
+    $modo = 'completa'
+    if ($Rapida) { $modo = 'rapida' }
 
     # La cache CIM vale per una sola analisi: se non si svuotasse,
     # la seconda esecuzione mostrerebbe i dati della prima.
@@ -680,6 +683,18 @@ function Show-Analisi {
             if ($d.Salute -ne 'Healthy') { $avvisi.Add(('Disco "{0}" in stato {1}: esegui subito un backup.' -f $d.Nome, $d.Salute)) | Out-Null }
             if ($null -ne $d.Temp -and $d.Temp -ge 70) { $avvisi.Add(('Disco "{0}" a {1} gradi: verifica il raffreddamento.' -f $d.Nome, $d.Temp)) | Out-Null }
             if ($null -ne $d.Usura -and $d.Usura -ge 80) { $avvisi.Add(('Disco "{0}" con usura al {1}%: pianifica la sostituzione.' -f $d.Nome, $d.Usura)) | Out-Null }
+
+            # Andamento rispetto alle analisi precedenti.
+            $err = $null
+            if ($null -ne $d.ErrLettura -or $null -ne $d.ErrScrittura) { $err = [long]$d.ErrLettura + [long]$d.ErrScrittura }
+            $and = Compare-SmartStorico -Disco $d.Nome -Stato $d.Salute -Usura $d.Usura -Errori $err
+            foreach ($p in $and.Peggioramenti) {
+                Write-Warn ('{0}: {1}' -f $d.Nome, $p)
+                $avvisi.Add(('Disco "{0}": {1} rispetto a {2} giorni fa. Fai un backup e tieni d''occhio il disco.' -f $d.Nome, $p, $and.Giorni)) | Out-Null
+            }
+            if ($null -ne $and.Giorni -and @($and.Peggioramenti).Count -eq 0) {
+                Write-Dim ('{0}: nessun peggioramento rispetto a {1} giorni fa.' -f $d.Nome, $and.Giorni)
+            }
         }
     }
 
@@ -746,6 +761,15 @@ function Show-Analisi {
         Write-Dim 'Calcolo dello spazio recuperabile...'
         Show-SysSpazioRecuperabile (Get-SysSpazioRecuperabile)
 
+        $bk = Get-SysBackup
+        Show-SysBackup $bk
+        $avvisoBackup = Get-AvvisoBackup $bk
+        if ($avvisoBackup) { $avvisi.Add($avvisoBackup) | Out-Null }
+
+        Write-Host ''
+        Write-Dim 'Ricerca delle cartelle e dei file piu'' grandi (al massimo 30 secondi)...'
+        Show-SysGrandi (Get-SysGrandi)
+
         Show-SysEventError (Get-SysEventError -Giorni 7)
 
         $evd = Get-SysDiskEvent -Giorni 30
@@ -772,6 +796,19 @@ function Show-Analisi {
         Write-Kv 'Avvisi' ('{0} allora, {1} adesso' -f $conf.Avvisi, $avvisi.Count)
     }
 
+    # --- novita' rispetto all'analisi precedente dello stesso tipo ---
+    $nov = Get-AvvisiConfronto -Avvisi $avvisi -Modo $modo
+    if ($nov) {
+        Write-Section 'NOVITA'' DALL''ULTIMA ANALISI'
+        $script:AvvisiNuovi = @($nov.Nuovi).Count
+        if ($script:AvvisiNuovi -eq 0 -and $nov.Risolti -eq 0) {
+            Write-Ok 'Nessun problema nuovo: la situazione e'' la stessa.'
+        } else {
+            foreach ($n in $nov.Nuovi) { Write-Warn ('nuovo: ' + $n) }
+            if ($nov.Risolti -gt 0) { Write-Ok ('{0} problemi dell''analisi precedente non ci sono piu''.' -f $nov.Risolti) }
+        }
+    }
+
     Write-Title 'Cosa merita attenzione'
     if ($avvisi.Count -eq 0) {
         Write-Ok 'Nessuna criticita'' rilevata. Il sistema risulta in ordine.'
@@ -788,6 +825,7 @@ function Show-Analisi {
     }
 
     Write-Storico $avvisi.Count
+    Save-Avvisi -Avvisi $avvisi -Modo $modo
     return $avvisi
 }
 
@@ -895,4 +933,288 @@ function Show-TaskSummary {
         Write-Host ''
         Write-Warn 'Alcune modifiche diventano effettive solo dopo il riavvio del PC.'
     }
+}
+
+# ============================================================
+#   BACKUP
+# ============================================================
+function Show-SysBackup {
+    param($D)
+    Write-Section 'BACKUP'
+    $soglia = [int]$script:CFG['backup_avviso_giorni']
+    if ($D.CronologiaUltimo) {
+        $giorni = [int]((Get-Date) - $D.CronologiaUltimo).TotalDays
+        $col = 'Green'
+        if ($giorni -gt $soglia) { $col = 'Yellow' }
+        Write-Kv 'Cronologia file' ('ultimo backup {0} ({1} giorni fa)' -f (Get-Date $D.CronologiaUltimo -Format 'dd/MM/yyyy'), $giorni) $col
+    } elseif ($D.CronologiaConfigurata) {
+        Write-Kv 'Cronologia file' 'configurata, ma nessun backup completato' 'Yellow'
+    } else {
+        Write-Kv 'Cronologia file' 'non attiva' 'DarkGray'
+    }
+    if ($D.OneDrive) {
+        Write-Kv 'OneDrive' 'Documenti o Desktop sincronizzati' 'Green'
+        Write-Dim 'Protegge i documenti, ma non e'' un backup completo: un file cancellato per errore'
+        Write-Dim 'sparisce anche dal cloud (resta nel cestino di OneDrive per 30 giorni).'
+    }
+    if (-not $D.CronologiaConfigurata -and -not $D.OneDrive) {
+        Write-Warn 'Nessun backup rilevato.'
+        Write-Dim 'Senza un backup, un guasto del disco fa perdere tutto. Attiva Cronologia file su un'
+        Write-Dim 'disco esterno (Impostazioni > Sistema > Archiviazione). Se usi un altro programma, ignora.'
+    }
+}
+
+# L'avviso per "Cosa merita attenzione", oppure $null.
+function Get-AvvisoBackup {
+    param($D)
+    $soglia = [int]$script:CFG['backup_avviso_giorni']
+    if ($D.CronologiaUltimo) {
+        $giorni = [int]((Get-Date) - $D.CronologiaUltimo).TotalDays
+        if ($giorni -gt $soglia) { return ('L''ultimo backup di Cronologia file e'' di {0} giorni fa: collega il disco di backup.' -f $giorni) }
+        return $null
+    }
+    if ($D.CronologiaConfigurata) { return 'Cronologia file e'' configurata ma non ha mai completato un backup.' }
+    if (-not $D.OneDrive) { return 'Nessun backup rilevato: attiva Cronologia file su un disco esterno.' }
+    return $null
+}
+
+# ============================================================
+#   CARTELLE E FILE PIU' GRANDI
+# ============================================================
+function Show-SysGrandi {
+    param($D)
+    Write-Section 'SPAZIO NELLA CARTELLA PERSONALE'
+    Write-Dim 'Le cartelle e i file piu'' grandi, solo da guardare: niente viene toccato.'
+    Write-Host ''
+    Write-Host '   Cartelle' -ForegroundColor White
+    foreach ($c in $D.Cartelle) {
+        Write-Host ('   {0,12}  ' -f (Format-Bytes $c.Byte)) -NoNewline -ForegroundColor Yellow
+        Write-Host $c.Nome
+    }
+    Write-Host ''
+    Write-Host '   File oltre 100 MB' -ForegroundColor White
+    if (@($D.File).Count -eq 0) { Write-Dim 'Nessuno.' }
+    foreach ($f in $D.File) {
+        $p = $f.Percorso
+        if ($p.StartsWith($D.Radice + '\')) { $p = '~' + $p.Substring($D.Radice.Length) }
+        Write-Host ('   {0,12}  ' -f (Format-Bytes $f.Byte)) -NoNewline -ForegroundColor Yellow
+        Write-Host $p
+    }
+    if ($D.Parziale) { Write-Dim ('Ricerca interrotta dopo {0} secondi: i valori sono minimi e potrebbero esserci altri file grandi.' -f $D.Secondi) }
+}
+
+# ============================================================
+#   DIAGNOSI GUIDATA
+#   Si parte da un sintomo e si controlla solo cio' che lo
+#   spiega, un passo alla volta. Alla fine $script:DiagProposta
+#   contiene l'insieme di operazioni da proporre (nome per
+#   Get-TaskSet), oppure resta vuoto.
+#   Niente Read-Host qui: la stessa funzione serve la finestra.
+# ============================================================
+$script:DiagProposta = ''
+
+function Write-Passo {
+    param([ValidateSet('ok','ko','info')][string]$Esito, [string]$Testo, [string]$Consiglio = '')
+    switch ($Esito) {
+        'ok'   { Write-Host '   [ok] ' -ForegroundColor (Get-ColoreStato 'ok') -NoNewline }
+        'ko'   { Write-Host '   [!]  ' -ForegroundColor (Get-ColoreStato 'warn') -NoNewline }
+        'info' { Write-Host '   -    ' -ForegroundColor DarkGray -NoNewline }
+    }
+    Write-Host $Testo
+    Add-Report ('- ' + $Testo)
+    if ($Consiglio) {
+        foreach ($r in (Split-TextWidth -Testo $Consiglio -Larghezza 66)) { Write-Host ('        ' + $r) -ForegroundColor DarkGray }
+    }
+    Write-Log ('diagnosi: {0} - {1}' -f $Esito, $Testo) 'INFO'
+}
+
+function Write-Conclusione {
+    param([string]$Testo)
+    Write-Host ''
+    Write-Host '   In breve' -ForegroundColor White
+    foreach ($r in (Split-TextWidth -Testo $Testo -Larghezza 70)) { Write-Host ('   ' + $r) }
+    Add-Report ('**In breve:** ' + $Testo)
+}
+
+function Show-Diagnosi {
+    param([ValidateSet('rete','lento','disco')][string]$Tipo)
+    $script:DiagProposta = ''
+    switch ($Tipo) {
+        'rete'  { Show-DiagnosiRete }
+        'lento' { Show-DiagnosiLento }
+        'disco' { Show-DiagnosiDisco }
+    }
+}
+
+function Show-DiagnosiRete {
+    Write-Section 'INTERNET NON VA'
+    $gw = $null
+    if (Get-Command Get-NetIPConfiguration -ErrorAction SilentlyContinue) {
+        $conf = @(Get-NetIPConfiguration -ErrorAction SilentlyContinue |
+                  Where-Object { $_.IPv4DefaultGateway -and $_.NetAdapter.Status -eq 'Up' }) | Select-Object -First 1
+        if (-not $conf) {
+            Write-Passo ko 'Nessuna connessione di rete attiva' 'Controlla che il Wi-Fi sia acceso e collegato a una rete, oppure che il cavo sia inserito.'
+            Write-Conclusione 'Il PC non e'' collegato a nessuna rete.'
+            return
+        }
+        Write-Passo ok ('Collegato alla rete ({0})' -f $conf.InterfaceAlias)
+        $ip = @($conf.IPv4Address | ForEach-Object { $_.IPAddress }) | Select-Object -First 1
+        if (-not $ip -or $ip -like '169.254.*') {
+            Write-Passo ko ('Indirizzo IP non valido ({0})' -f $(if ($ip) { $ip } else { 'assente' })) 'Il router non ha assegnato un indirizzo al PC. Rinnovarlo di solito risolve.'
+            $script:DiagProposta = 'RetePulizia'
+            Write-Conclusione 'Il PC e'' collegato ma non ha ricevuto un indirizzo dal router.'
+            return
+        }
+        Write-Passo ok ('Indirizzo IP {0}' -f $ip)
+        $gw = @($conf.IPv4DefaultGateway | ForEach-Object { $_.NextHop }) | Select-Object -First 1
+    }
+
+    $internet = $false
+    try { $internet = [bool](Test-Connection -ComputerName '1.1.1.1' -Count 2 -Quiet -ErrorAction Stop) } catch { }
+    if ($internet) {
+        Write-Passo ok 'Internet raggiungibile'
+    } else {
+        $router = $false
+        if ($gw) { try { $router = [bool](Test-Connection -ComputerName $gw -Count 2 -Quiet -ErrorAction Stop) } catch { } }
+        if ($router) {
+            Write-Passo ko ('Il router ({0}) risponde, ma Internet no' -f $gw) 'Riavvia il router. Se il problema resta, e'' la linea: contatta il gestore.'
+            Write-Conclusione 'Il problema e'' oltre il router, non nel PC.'
+        } else {
+            Write-Passo ko 'Il router non risponde' 'Il collegamento fra PC e router non funziona: avvicinati al router, riavvialo o prova con il cavo.'
+            Write-Conclusione 'Il problema e'' fra il PC e il router.'
+        }
+        return
+    }
+
+    $dns = $false
+    try { $dns = ($null -ne (Resolve-DnsName -Name 'www.microsoft.com' -Type A -DnsOnly -ErrorAction Stop)) } catch { }
+    if (-not $dns) {
+        Write-Passo ko 'La risoluzione dei nomi (DNS) non funziona' 'Internet c''e'', ma i nomi dei siti non vengono tradotti in indirizzi. Svuotare la cache DNS spesso risolve.'
+        $script:DiagProposta = 'RetePulizia'
+        Write-Conclusione 'Problema di DNS.'
+        return
+    }
+    Write-Passo ok 'Risoluzione dei nomi (DNS) funzionante'
+
+    # La pagina di verifica di Microsoft e' la stessa che usa Windows
+    # per l'icona della rete. Esiste solo in HTTP: se il contenuto non
+    # e' quello atteso, in mezzo c'e' una pagina di accesso (Wi-Fi di
+    # hotel, aeroporti, treni) che intercetta le richieste.
+    $verifica = $null
+    try {
+        $r = Invoke-WebRequest -Uri 'http://www.msftconnecttest.com/connecttest.txt' -UseBasicParsing -TimeoutSec 10 -ErrorAction Stop
+        $verifica = ([string]$r.Content -match 'Microsoft Connect Test')
+    } catch { }
+    if ($verifica -eq $false) {
+        Write-Passo ko 'Le richieste vengono intercettate da una pagina di accesso' 'Tipico dei Wi-Fi pubblici: apri il browser e completa la pagina che compare (accettazione, codice, login).'
+        Write-Conclusione 'Serve completare l''accesso alla rete Wi-Fi dal browser.'
+        return
+    }
+
+    $https = $false
+    try {
+        [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+        $r = Invoke-WebRequest -Uri 'https://www.microsoft.com' -Method Head -UseBasicParsing -TimeoutSec 10 -ErrorAction Stop
+        $https = ($r.StatusCode -ge 200 -and $r.StatusCode -lt 400)
+    } catch { }
+    if ($https) {
+        Write-Passo ok 'Navigazione sicura (HTTPS) funzionante'
+        Write-Conclusione 'La connessione funziona. Se un sito in particolare non si apre, il problema e'' di quel sito.'
+    } else {
+        Write-Passo ko 'I siti sicuri (HTTPS) non si aprono' 'Rete e DNS funzionano: il blocco e'' probabilmente un firewall, un proxy, una VPN o l''antivirus che ispeziona il traffico.'
+        Write-Conclusione 'Qualcosa blocca il traffico web: controlla VPN, proxy e antivirus.'
+    }
+}
+
+function Show-DiagnosiLento {
+    Write-Section 'IL PC E'' LENTO'
+    $cause = 0
+
+    $mem = Get-SysMemory
+    $paging = $false
+    if ($null -ne $mem.PagefileUsati -and $mem.PagefileUsati -ge ([long]$script:CFG['swap_avviso_mb'] * 1MB)) { $paging = $true }
+    if ($mem.PctUsato -ge $script:CFG['ram_critica'] -or $paging) {
+        $dett = 'RAM al {0}%' -f $mem.PctUsato
+        if ($paging) { $dett += (', file di paging in uso per {0}' -f (Format-Bytes $mem.PagefileUsati)) }
+        Write-Passo ko ('Memoria insufficiente: {0}' -f $dett) 'Windows sta usando il disco come memoria. Chiudi programmi e schede del browser che non usi; se succede sempre, serve piu'' RAM.'
+        $cause++
+    } else {
+        Write-Passo ok ('Memoria sufficiente (RAM al {0}%)' -f $mem.PctUsato)
+    }
+    if ($mem.Modalita -eq 'single channel (probabile)') {
+        Write-Passo ko 'RAM in single channel' 'I moduli di memoria sembrano sullo stesso canale: spostarne uno nello slot giusto raddoppia la banda.'
+        $cause++
+    }
+
+    $tipo = $null
+    try {
+        $num = (Get-Partition -DriveLetter ($env:SystemDrive.TrimEnd(':')) -ErrorAction Stop).DiskNumber
+        $tipo = [string](Get-PhysicalDisk -ErrorAction Stop | Where-Object { [string]$_.DeviceId -eq [string]$num } | Select-Object -First 1).MediaType
+    } catch { }
+    if ($tipo -eq 'HDD') {
+        Write-Passo ko 'Il disco di sistema e'' meccanico (HDD)' 'E'' la causa di lentezza piu'' comune sui PC datati: sostituirlo con un SSD da'' un miglioramento che nessuna pulizia puo'' avvicinare.'
+        $cause++
+    } elseif ($tipo -eq 'SSD') {
+        Write-Passo ok 'Disco di sistema SSD'
+    }
+
+    $sis = @(Get-SysVolume | Where-Object { $_.Lettera -eq $env:SystemDrive }) | Select-Object -First 1
+    if ($sis -and $sis.PctUsato -ge $script:CFG['disco_avviso']) {
+        Write-Passo ko ('Disco di sistema pieno al {0}%' -f $sis.PctUsato) 'Con poco spazio libero Windows rallenta e gli aggiornamenti possono fallire. Una pulizia sicura recupera spazio senza rischi.'
+        $script:DiagProposta = 'PuliziaSicura'
+        $cause++
+    } elseif ($sis) {
+        Write-Passo ok ('Spazio su disco sufficiente ({0}% occupato)' -f $sis.PctUsato)
+    }
+
+    $top = @((Get-SysTopProcess -Top 3).Cpu | Where-Object { $_.Nome -ne 'Idle' }) | Select-Object -First 1
+    if ($top -and $top.Pct -ge 50) {
+        Write-Passo ko ('Un programma occupa il processore: {0} ({1}%)' -f $top.Nome, $top.Pct) 'Se non lo stai usando, chiudilo. Se e'' un componente di Windows (aggiornamenti, antivirus), di solito finisce da solo.'
+        $cause++
+    } else {
+        Write-Passo ok 'Nessun programma blocca il processore'
+    }
+
+    $avvio = @(Get-SysStartup | Where-Object { $_.Attivo })
+    if ($avvio.Count -ge $script:CFG['avvii_avviso']) {
+        Write-Passo ko ('{0} programmi partono all''avvio' -f $avvio.Count) 'Spegni quelli che non ti servono con "Programmi all''avvio": si riattivano in qualsiasi momento.'
+        $cause++
+    } else {
+        Write-Passo ok ('Pochi programmi all''avvio ({0})' -f $avvio.Count)
+    }
+
+    $sum = Get-SysSummary
+    if ($sum.Uptime -and $sum.Uptime.TotalDays -ge $script:CFG['uptime_avviso_giorni']) {
+        Write-Passo ko ('Acceso da {0} giorni' -f [int]$sum.Uptime.TotalDays) 'Un riavvio libera la memoria e applica gli aggiornamenti in sospeso. Spegni e riaccendi non basta: con l''avvio rapido di Windows serve proprio "Riavvia".'
+        $cause++
+    }
+    if ((Test-RebootPending).Pending) {
+        Write-Passo ko 'C''e'' un riavvio in sospeso' 'Un aggiornamento aspetta il riavvio per completarsi: finche'' non riavvii puo'' rallentare il sistema.'
+        $cause++
+    }
+
+    $pow = Get-SysPower
+    if ($pow.ModalitaAc -like 'Massimo risparmio*') {
+        Write-Passo ko 'Risparmio energetico attivo anche con l''alimentatore' 'Impostazioni > Sistema > Alimentazione: scegli "Bilanciata" o "Prestazioni migliori".'
+        $cause++
+    }
+
+    if ($cause -eq 0) {
+        Write-Conclusione 'Nessuna causa evidente. Se la lentezza riguarda un solo programma, il problema e'' probabilmente di quel programma.'
+    } else {
+        Write-Conclusione ('Trovate {0} possibili cause: parti dalla prima dell''elenco.' -f $cause)
+    }
+}
+
+function Show-DiagnosiDisco {
+    Write-Section 'DISCO PIENO'
+    $script:DiagProposta = 'PuliziaSicura'
+    Show-SysVolume (Get-SysVolume)
+    Write-Host ''
+    Write-Dim 'Calcolo dello spazio recuperabile...'
+    Show-SysSpazioRecuperabile (Get-SysSpazioRecuperabile)
+    Write-Host ''
+    Write-Dim 'Ricerca delle cartelle e dei file piu'' grandi (al massimo 30 secondi)...'
+    Show-SysGrandi (Get-SysGrandi)
+    Write-Conclusione 'Parti dalla pulizia sicura, che non tocca i tuoi file. Per recuperare di piu'' guarda le voci qui sopra: spesso lo spazio sta in una macchina virtuale, in un vecchio archivio o nella cartella Download.'
 }

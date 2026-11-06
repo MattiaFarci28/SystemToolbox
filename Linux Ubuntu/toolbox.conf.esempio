@@ -115,3 +115,13 @@ avanzamento=si
 # Non usato su Linux: la chiave esiste solo perche' la
 # configurazione resti la stessa sui tre sistemi.
 ridimensiona_terminale=no
+
+# Giorni oltre i quali un backup e' considerato vecchio e compare
+# un avviso nell'analisi completa.
+backup_avviso_giorni=7
+
+# Programmi da escludere dagli aggiornamenti.
+# Non usato su Linux: i pacchetti di sistema si tengono fermi con
+# gli strumenti della distribuzione (apt-mark hold). La chiave
+# esiste perche' la configurazione resti la stessa sui sistemi.
+app_escluse=

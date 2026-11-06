@@ -280,6 +280,39 @@ selezione_personalizzata() {
 }
 
 # ============================================================
+#   DIAGNOSI GUIDATA
+# ============================================================
+diagnosi_guidata() {
+    [ -t 1 ] && clear
+    ui_title "Diagnosi guidata"
+    echo ""
+    printf '     1)  Internet non va\n'
+    printf "     2)  Il computer e' lento\n"
+    printf "     3)  Il disco e' pieno\n"
+    echo ""
+    printf '   %sScelta:%s ' "$C_WHITE" "$C_OFF"
+    local d; read -r d
+    case "$d" in
+        1) diagnosi_rete ;;
+        2) diagnosi_lento ;;
+        3) diagnosi_disco ;;
+        *) return 0 ;;
+    esac
+    [ -z "$DIAG_PROPOSTA" ] && return 0
+    local nome
+    case "$DIAG_PROPOSTA" in
+        Rete)          nome="Manutenzione rete" ;;
+        PuliziaSicura) nome="Pulizia sicura" ;;
+        *)             nome="$DIAG_PROPOSTA" ;;
+    esac
+    echo ""
+    if ui_yesno "Eseguire ora: $nome?" "s"; then
+        esegui_insieme "$nome" "$(task_set "$DIAG_PROPOSTA")" 1 ""
+    fi
+    return 0
+}
+
+# ============================================================
 #   MODALITA NON INTERATTIVA
 # ============================================================
 if [ "$AUTO" -eq 1 ]; then
@@ -287,9 +320,13 @@ if [ "$AUTO" -eq 1 ]; then
     if [ "$TB_JSON" -eq 1 ]; then
         analisi rapida >/dev/null 2>&1
         esegui_insieme "Manutenzione consigliata" "$(task_set Consigliata)" 1 "" >/dev/null 2>&1
+        [ "${AVVISI_NUOVI:-0}" -gt 0 ] && ui_notifica "$AVVISI_NUOVI nuovi problemi rilevati: apri il report"
     else
         analisi rapida
         esegui_insieme "Manutenzione consigliata" "$(task_set Consigliata)" 1 ""
+        # Si avvisa solo se qualcosa e' peggiorato rispetto all'ultima
+        # volta: ripetere ogni settimana le stesse cose le fa ignorare.
+        [ "${AVVISI_NUOVI:-0}" -gt 0 ] && ui_notifica "$AVVISI_NUOVI nuovi problemi rilevati: apri il report"
         echo ""
         ui_title "Esecuzione automatica terminata"
         ui_dim "Log: $TB_LOG"
@@ -326,6 +363,7 @@ mostra_menu() {
     printf '     9)  Manutenzione consigliata  %spulizia sicura + DNS%s\n' "$C_DIM" "$C_OFF"
     echo ""
     printf '   %sALTRO%s\n' "$C_GREEN" "$C_OFF"
+    printf '     D)  Diagnosi guidata          %sInternet, lentezza, disco pieno%s\n' "$C_DIM" "$C_OFF"
     printf '     P)  Selezione personalizzata  %sscegli le singole operazioni%s\n' "$C_DIM" "$C_OFF"
     printf '     L)  Percorso della cartella dei log\n'
     printf '     S)  Modalita simulazione: '
@@ -359,6 +397,7 @@ while true; do
              "La correzione PAM interviene solo se il modulo pam_lastlog non esiste piu' su questo sistema, e fa comunque una copia di sicurezza."
            ui_pause ;;
         9) esegui_insieme "Manutenzione consigliata" "$(task_set Consigliata)" 0 ""; ui_pause ;;
+        D) diagnosi_guidata; ui_pause ;;
         P) selezione_personalizzata; ui_pause ;;
         L) echo ""; ui_kv "Cartella dei log" "$TB_DIR/logs"
            command -v xdg-open >/dev/null 2>&1 && [ "$TB_WSL" -eq 0 ] && xdg-open "$TB_DIR/logs" >/dev/null 2>&1

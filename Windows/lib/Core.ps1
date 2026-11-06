@@ -325,7 +325,11 @@ function Invoke-Native {
     param(
         [Parameter(Mandatory=$true)][string]$File,
         [string[]]$Arguments = @(),
-        [int]$TimeoutSec = 60
+        [int]$TimeoutSec = 60,
+        # winget scrive in UTF-8: letto con la codifica predefinita
+        # di PowerShell 5.1 il carattere di troncamento dei nomi
+        # diventerebbe tre caratteri e sposterebbe le colonne.
+        [switch]$Utf8
     )
     $tmpOut = [System.IO.Path]::GetTempFileName()
     $tmpErr = [System.IO.Path]::GetTempFileName()
@@ -349,8 +353,10 @@ function Invoke-Native {
         return [pscustomobject]@{ ExitCode = -1; Output = $_.Exception.Message; TimedOut = $false; Avviato = $false }
     }
     $out = ''
-    try { $out = ((Get-Content -LiteralPath $tmpOut -Raw -ErrorAction SilentlyContinue) +
-                  (Get-Content -LiteralPath $tmpErr -Raw -ErrorAction SilentlyContinue)) } catch { }
+    $codifica = 'Default'
+    if ($Utf8) { $codifica = 'UTF8' }
+    try { $out = ((Get-Content -LiteralPath $tmpOut -Raw -Encoding $codifica -ErrorAction SilentlyContinue) +
+                  (Get-Content -LiteralPath $tmpErr -Raw -Encoding $codifica -ErrorAction SilentlyContinue)) } catch { }
     Remove-Item -LiteralPath $tmpOut, $tmpErr -Force -ErrorAction SilentlyContinue
     if ($null -eq $out) { $out = '' }
     return [pscustomobject]@{ ExitCode = $exit; Output = $out.Trim(); TimedOut = $timedOut; Avviato = $true }

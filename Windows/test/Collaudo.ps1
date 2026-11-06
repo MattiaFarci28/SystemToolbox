@@ -320,6 +320,124 @@ Check 'nessun Remove-Item -Recurse nel codice' ($sorgTutto -match '(?m)^(?!\s*#)
 Remove-Item -LiteralPath $radiceProva -Recurse -Force -ErrorAction SilentlyContinue
 
 # ------------------------------------------------------------
+Titolo 'Configurazione: backup e applicazioni escluse'
+$cfgX = Join-Path $env:TEMP ('tb_cfgx_{0}.conf' -f $PID)
+"app_escluse = Mozilla.Firefox, Git.Git`nbackup_avviso_giorni=3" | Set-Content -LiteralPath $cfgX -Encoding UTF8
+Import-Configurazione $cfgX
+Check 'elenco letto' ((Get-AppEscluse) -join '|') 'Mozilla.Firefox|Git.Git'
+Check 'giorni del backup' $script:CFG['backup_avviso_giorni'] '3'
+'app_escluse=a;Remove-Item x' | Set-Content -LiteralPath $cfgX -Encoding UTF8
+Import-Configurazione $cfgX
+Check 'valore con caratteri di comando rifiutato' ((Get-AppEscluse) -join '|') 'Mozilla.Firefox|Git.Git'
+$script:CFG['app_escluse'] = ''; $script:CFG['backup_avviso_giorni'] = 7
+Remove-Item -LiteralPath $cfgX -Force -ErrorAction SilentlyContinue
+
+# ------------------------------------------------------------
+Titolo 'Novita'' rispetto all''analisi precedente'
+$dirNov = Join-Path $env:TEMP ('tb_nov_{0}' -f $PID)
+New-Item -ItemType Directory -Path $dirNov -Force | Out-Null
+$salvaSto = $script:TB_STORICO
+Initialize-Storico (Join-Path $dirNov 'storico.txt')
+Check 'chiave senza cifre' (Get-ChiaveAvviso 'Disco pieno al 91%') 'Disco pieno al #%'
+Check 'prima analisi: nessun confronto' ($null -eq (Get-AvvisiConfronto -Avvisi @('a') -Modo 'completa')) $true
+Save-Avvisi -Avvisi @('Disco pieno al 91%', 'Firewall spento') -Modo 'completa'
+$c = Get-AvvisiConfronto -Avvisi @('Disco pieno al 93%', 'Backup vecchio di 12 giorni') -Modo 'completa'
+Check 'un avviso nuovo, il numero cambiato non conta' ($c.Nuovi -join '|') 'Backup vecchio di 12 giorni'
+Check 'un avviso risolto' $c.Risolti 1
+Check 'la rapida ha un suo confronto' ($null -eq (Get-AvvisiConfronto -Avvisi @('a') -Modo 'rapida')) $true
+
+# ------------------------------------------------------------
+Titolo 'Storico della salute dei dischi'
+$r1 = Compare-SmartStorico -Disco 'Disco di prova' -Stato 'Healthy' -Usura 10 -Errori 0
+Check 'prima registrazione: nessun confronto' ($null -eq $r1.Giorni) $true
+$fSmart = Join-Path $dirNov 'smart.txt'
+$vecchio = [long][double]::Parse((Get-Date -UFormat %s)) - 3 * 86400
+(Get-Content -LiteralPath $fSmart) -replace '^\d+', $vecchio | Set-Content -LiteralPath $fSmart -Encoding UTF8
+$r2 = Compare-SmartStorico -Disco 'Disco di prova' -Stato 'Healthy' -Usura 16 -Errori 3
+Check 'giorni dall''ultima registrazione' $r2.Giorni 3
+Check 'usura ed errori in aumento segnalati' @($r2.Peggioramenti).Count 2
+$r3 = Compare-SmartStorico -Disco 'Disco di prova' -Stato 'Healthy' -Usura 17 -Errori 3
+Check 'nessun avviso per +1% e stessi errori' @($r3.Peggioramenti).Count 0
+$script:TB_STORICO = $salvaSto
+Remove-Item -LiteralPath $dirNov -Recurse -Force -ErrorAction SilentlyContinue
+
+# ------------------------------------------------------------
+Titolo 'Tabella di winget'
+$es = @(
+    "   - `r   \ `rNome                  Id                 Versione   Disponibile Origine",
+    '----------------------------------------------------------------------',
+    'Mozilla Firefox (x64) Mozilla.Firefox    130.0      131.0       winget',
+    '7-Zip 23.01 (x64)     7zip.7zip          23.01      24.08       winget',
+    ('Nome con ' + [char]0x2026 + ' lungo      Esempio.Lungo      1.0        2.0         winget'),
+    '3 aggiornamenti disponibili.',
+    '',
+    'I pacchetti seguenti hanno un aggiornamento, ma richiedono la destinazione esplicita:',
+    'Nome                  Id                 Versione   Disponibile Origine',
+    '----------------------------------------------------------------------',
+    'Bloccato              Esempio.Fermo      1.0        2.0         winget'
+) -join "`r`n"
+$t = @(ConvertFrom-WingetTabella -Testo $es)
+Check 'tre pacchetti, la seconda tabella ignorata' $t.Count 3
+Check 'nome con spazi e parentesi' $t[0].Nome 'Mozilla Firefox (x64)'
+Check 'identificativo' $t[1].Id '7zip.7zip'
+Check 'versione disponibile' $t[1].Disponibile '24.08'
+Check 'nome troncato con i puntini' $t[2].Id 'Esempio.Lungo'
+Check 'testo vuoto' @(ConvertFrom-WingetTabella -Testo '').Count 0
+
+# ------------------------------------------------------------
+Titolo 'Aggiornamenti nel registro delle operazioni'
+Check 'insieme Aggiorna tutto' ((Get-TaskSet -Nome 'Aggiornamenti' | ForEach-Object { $_.Id }) -join ' ') 'upd_windows upd_winget'
+Check 'aggiornamenti marcati avanzato' (@(Get-TaskSet -Nome 'Aggiornamenti' | Where-Object { $_.Livello -ne 'Avanzato' }).Count) 0
+
+# ------------------------------------------------------------
+Titolo 'Programmi all''avvio'
+$a = Get-ApprovazioneAvvio -Origine 'HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Run' -Nome 'Prog'
+Check 'registro di sistema' $a.Chiave 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\StartupApproved\Run'
+$a = Get-ApprovazioneAvvio -Origine 'HKLM\SOFTWARE\Wow6432Node\Microsoft\Windows\CurrentVersion\Run' -Nome 'Prog'
+Check 'programma a 32 bit' $a.Chiave 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\StartupApproved\Run32'
+$a = Get-ApprovazioneAvvio -Origine 'HKU\S-1-5-21-1-2-3-1001\SOFTWARE\Microsoft\Windows\CurrentVersion\Run' -Nome 'Prog'
+Check 'registro di un utente' $a.Chiave 'Registry::HKEY_USERS\S-1-5-21-1-2-3-1001\SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\StartupApproved\Run'
+$a = Get-ApprovazioneAvvio -Origine 'Common Startup' -Nome 'Prog' -Comando 'Prog.lnk'
+Check 'cartella di avvio: nome del collegamento' $a.Valore 'Prog.lnk'
+Check 'RunOnce non gestibile' ($null -eq (Get-ApprovazioneAvvio -Origine 'HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\RunOnce' -Nome 'X')) $true
+
+# Giro completo su una chiave di prova: nessun programma vero toccato.
+$chiaveProva = 'HKCU:\Software\SystemToolboxCollaudo\StartupApproved'
+$voce = [pscustomobject]@{ Nome = 'Prova'; Chiave = $chiaveProva; Valore = 'Prova' }
+try {
+    Set-AvvioAttivo -Voce $voce -Attivo $false
+    Check 'spento' (Get-StatoApprovazione -Chiave $chiaveProva -Valore 'Prova') $false
+    $dati = (Get-ItemProperty -LiteralPath $chiaveProva -Name 'Prova').Prova
+    Check 'formato di Gestione attivita'' (12 byte, ora inclusa)' ('{0}|{1}|{2}' -f $dati.Length, $dati[0], [bool]([BitConverter]::ToInt64($dati, 4))) '12|3|True'
+    Set-AvvioAttivo -Voce $voce -Attivo $true
+    Check 'riacceso' (Get-StatoApprovazione -Chiave $chiaveProva -Valore 'Prova') $true
+} finally {
+    Remove-Item -LiteralPath 'HKCU:\Software\SystemToolboxCollaudo' -Recurse -Force -ErrorAction SilentlyContinue
+}
+
+# ------------------------------------------------------------
+Titolo 'Cartelle e file piu'' grandi'
+$h = Join-Path $env:TEMP ('tb_grandi_{0}' -f $PID)
+New-Item -ItemType Directory -Path (Join-Path $h 'con spazio'), (Join-Path $h 'altrove') -Force | Out-Null
+[IO.File]::WriteAllBytes((Join-Path $h 'con spazio\grande.bin'), (New-Object byte[] 300000))
+[IO.File]::WriteAllBytes((Join-Path $h 'altrove\fuori.bin'), (New-Object byte[] 500000))
+New-Item -ItemType Junction -Path (Join-Path $h 'con spazio\collegamento') -Target (Join-Path $h 'altrove') | Out-Null
+$g = Get-SysGrandi -Radice (Join-Path $h 'con spazio') -SecondiMax 10 -SogliaFile 100000
+Check 'il collegamento non viene seguito' ((@($g.File) | ForEach-Object { Split-Path -Leaf $_.Percorso }) -join '|') 'grande.bin'
+Check 'misura completa' $g.Parziale $false
+Remove-Item -LiteralPath $h -Recurse -Force -ErrorAction SilentlyContinue
+
+# ------------------------------------------------------------
+Titolo 'Diagnosi guidata e finestra'
+foreach ($fn in 'Show-Diagnosi','Show-DiagnosiRete','Show-DiagnosiLento','Show-DiagnosiDisco','Show-SysBackup','Show-SysGrandi','Get-AvvisoBackup') {
+    if (Get-Command $fn -ErrorAction SilentlyContinue) { Ok "$fn definita" } else { Ko "$fn mancante" }
+}
+$sorgGui = Get-Content -LiteralPath (Join-Path $Radice 'lib\GuiUI.ps1') -Raw
+Check 'pulsanti nell''intestazione' (($sorgGui -match 'x:Name="BtnDiagnosi"') -and ($sorgGui -match 'x:Name="BtnAvvio"')) $true
+Check 'il thread di lavoro esegue la diagnosi' ($sorgGui -match "elseif \(\`$modo -eq 'diagnosi'\)") $true
+Check 'categoria Aggiornamenti nell''elenco' ($sorgGui -match "@\('Pulizia','Rete','Manutenzione','Aggiornamenti'\)") $true
+
+# ------------------------------------------------------------
 Write-Host ''
 Write-Host '============================================'
 Write-Host ("  superati: $script:Pass    falliti: $script:Fail")

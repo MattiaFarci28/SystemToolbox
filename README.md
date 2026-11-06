@@ -13,6 +13,8 @@ Funziona su **Windows**, **macOS** e **Linux**.
 - **Analizza** il sistema senza modificare nulla e segnala solo ciò che richiede attenzione.
 - **Pulisce** file temporanei e cache, con livelli di rischio chiari.
 - **Ripara** con le operazioni di manutenzione del sistema operativo.
+- **Aggiorna** sistema e applicazioni, mostrando prima l'elenco.
+- **Diagnostica** i problemi più comuni: Internet che non va, PC lento, disco pieno.
 
 Non corregge niente da solo: ogni intervento lo decide l'utente.
 
@@ -74,8 +76,8 @@ Copialo togliendo `.esempio` e modifica le soglie. Il file viene solo letto, mai
 |---|---|---|---|
 | Linguaggio | PowerShell 5.1 | bash 3.2 | bash 4+ |
 | Interfaccia | finestra grafica + menu testuale | menu testuale + app per il Dock | menu testuale + finestre zenity |
-| Operazioni | 27 | 22 | 21 |
-| Controlli di collaudo | 57 | 104 | 125 |
+| Operazioni | 29 | 23 | 21 |
+| Controlli di collaudo | 97 | 142 | 158 |
 
 ## Cosa non fa
 

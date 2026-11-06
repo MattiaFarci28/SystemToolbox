@@ -39,6 +39,10 @@ I parametri si possono combinare, per esempio `-Auto -DryRun`.
 - **Doppio clic** su un'operazione: la esegue da sola, dopo conferma.
 - **Interrompi** si ferma alla fine dell'operazione in corso, mai a metà.
 - **Esporta report** salva il contenuto del pannello.
+- **Diagnosi guidata** (in alto): parti dal problema, "Internet non va", "il PC è lento" o
+  "il disco è pieno", e la diagnosi controlla solo ciò che lo spiega. Se c'è un'operazione
+  che può aiutare, viene già selezionata a sinistra.
+- **Programmi all'avvio** (in alto): spunta quelli che devono partire con Windows.
 
 La finestra ricorda dimensione e ultima selezione, e segue il tema chiaro o scuro di Windows.
 
@@ -62,6 +66,9 @@ La finestra ricorda dimensione e ultima selezione, e segue il tema chiaro o scur
 | 7 | Integrità del sistema: punto di ripristino, TRIM, SFC, DISM |
 | 8 | Manutenzione consigliata (3 + 5) |
 | 9 | Selezione personalizzata |
+| A | Aggiorna tutto: Windows Update e applicazioni |
+| D | Diagnosi guidata |
+| V | Programmi all'avvio |
 | L | Apri la cartella dei log |
 | S | Simulazione sì/no |
 | 0 | Esci |
@@ -110,6 +117,13 @@ La finestra ricorda dimensione e ultima selezione, e segue il tema chiaro o scur
 | avanzato | Verifica file di sistema (SFC) | 9–21 min | |
 | avanzato | Riparazione immagine (DISM) | 12–28 min | serve Internet |
 
+### Aggiornamenti
+
+| Livello | Operazione | Tempo | Note |
+|---|---|---|---|
+| avanzato | Installa gli aggiornamenti di Windows | 15 min | mostra l'elenco prima; può richiedere il riavvio |
+| avanzato | Aggiorna le applicazioni (winget) | 10 min | mostra l'elenco prima; quelle in `app_escluse` restano ferme |
+
 ### Insiemi predefiniti
 
 | Insieme | Contenuto | Tempo |
@@ -120,6 +134,7 @@ La finestra ricorda dimensione e ultima selezione, e segue il tema chiaro o scur
 | Rete leggera | DNS, ARP, IP, registrazione DNS | ~40 s |
 | Rete reset | Winsock, TCP/IP, IPv6 | ~25 s + riavvio |
 | Manutenzione | punto di ripristino, TRIM, SFC, DISM | 22–52 min |
+| Aggiorna tutto | Windows Update + applicazioni | 25 min circa |
 
 Usa **Rete leggera** di routine. **Rete reset** serve solo quando la connessione non funziona.
 
@@ -135,8 +150,19 @@ Usa **Rete leggera** di routine. **Rete reset** serve solo quando la connessione
 | Aggiornamenti di Windows, programmi all'avvio | | ✓ |
 | Punti di ripristino, driver con errori, manutenzione automatica | | ✓ |
 | Spazio recuperabile, errori di sistema, eventi del disco | | ✓ |
+| Backup: Cronologia file e OneDrive | | ✓ |
+| Cartelle e file più grandi della cartella personale | | ✓ |
 
-Alla fine, **Cosa merita attenzione** elenca solo ciò che richiede una scelta.
+Alla fine, **Cosa merita attenzione** elenca solo ciò che richiede una scelta, e
+**Novità dall'ultima analisi** mostra cosa è comparso o sparito rispetto alla volta prima.
+La salute dei dischi viene confrontata con le analisi precedenti: se usura o errori
+aumentano, compare un avviso prima che lo stato SMART diventi critico.
+
+## Programmi all'avvio
+
+Si spengono e si riattivano con lo stesso meccanismo della scheda Avvio di Gestione attività:
+il programma non viene toccato, e si riattiva in qualsiasi momento da qui o da lì.
+L'effetto vale dal prossimo avvio.
 
 ## Configurazione
 
@@ -151,6 +177,8 @@ Copia `Toolbox.conf.esempio` in `Toolbox.conf`.
 | `uptime_avviso_giorni` | 7 | giorni di accensione oltre cui suggerire il riavvio |
 | `log_da_conservare` | 15 | quanti log tenere |
 | `analisi_aggiornamenti` | si | `no` salta la ricerca degli aggiornamenti (la parte più lenta) |
+| `backup_avviso_giorni` | 7 | giorni oltre cui un backup è considerato vecchio |
+| `app_escluse` | (vuoto) | applicazioni da non aggiornare, per identificativo winget |
 | `colori` | auto | `auto`, `si`, `no`, `daltonici` |
 | `tema` | auto | `auto`, `chiaro`, `scuro` |
 | `lingua` | it | non usata: per ora esiste solo l'italiano |
@@ -160,6 +188,10 @@ Copia `Toolbox.conf.esempio` in `Toolbox.conf`.
 - Se parte in un PowerShell a 32 bit si riavvia da solo a 64 bit, mantenendo tutti i parametri.
 - I servizi fermati da un'operazione vengono riportati allo stato di prima.
 - Le conferme arrivano sempre prima di iniziare, mai a metà lavoro.
+- In modalità automatica compare una notifica di Windows solo se ci sono problemi **nuovi**
+  rispetto all'esecuzione precedente: ripetere ogni settimana le stesse cose le fa ignorare.
+- Gli aggiornamenti accettano le licenze come fa Windows Update automatico. Quelli che
+  chiedono un'interazione vengono saltati e segnalati.
 
 ## Collaudo
 
@@ -167,7 +199,7 @@ Copia `Toolbox.conf.esempio` in `Toolbox.conf`.
 powershell -ExecutionPolicy Bypass -File "test\Collaudo.ps1"
 ```
 
-57 controlli, non toccano il sistema.
+97 controlli. Non toccano il sistema: usano cartelle e una chiave di registro di prova, poi rimosse.
 Lo strumento è stato provato anche su un PC Windows reale.
 
 ## File

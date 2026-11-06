@@ -40,6 +40,7 @@ net_reset|Reset preferenze di rete|Rete|riavvio|20|1|1|Azzera la configurazione 
 maint_launchservices|Ricostruisci il database Apri con|Manutenzione|sicuro|60|0|0|Risolve il menu Apri con pieno di voci duplicate e il Finder lento ad aprire i file.
 maint_verifydisk|Verifica il volume di avvio|Manutenzione|sicuro|180|1|0|Controlla la struttura del file system senza modificarlo. Solo diagnosi.
 maint_spotlight|Reindicizza Spotlight|Manutenzione|avanzato|60|1|0|Ricostruisce l'indice di ricerca da zero. Risolve una ricerca che non trova nulla, ma per alcune ore il Mac sara' piu' lento e le ventole piu' attive.
+maint_brew_upgrade|Aggiorna i programmi di Homebrew|Manutenzione|avanzato|600|0|0|Aggiorna i programmi installati con Homebrew. Quelli indicati in app_escluse nel file di configurazione restano alla versione attuale.
 maint_updates|Installa gli aggiornamenti di macOS|Manutenzione|avanzato|1200|1|1|Scarica e installa gli aggiornamenti disponibili. Puo' richiedere molto tempo e riavviare il Mac.
 maint_purge|Libera la memoria inattiva (purge)|Manutenzione|sconsigliato|20|1|0|SCONSIGLIATO: svuota la cache disco della memoria. macOS la usa apposta per andare piu' veloce, e svuotarla peggiora le prestazioni finche' non si ricostruisce. Incluso solo per completezza.
 FINE
@@ -152,6 +153,7 @@ task_set() {
         Rete)            echo "net_flushdns net_renew" ;;
         ReteReset)       echo "net_reset" ;;
         Manutenzione)    echo "maint_launchservices maint_verifydisk maint_spotlight maint_updates" ;;
+        Aggiornamenti)   echo "maint_updates maint_brew_upgrade" ;;
         Consigliata)     echo "clean_trash clean_crashreports clean_logs clean_browsercache clean_quicklook clean_mail net_flushdns" ;;
         *)               echo "" ;;
     esac
@@ -547,6 +549,49 @@ task_maint_purge() {
         ctx_note "Cache disco svuotata. macOS la ricostruira' rileggendo dal disco."
     else
         ctx_fail "Comando purge non disponibile"
+    fi
+    return 0
+}
+
+# Programmi di Homebrew. Si aggiornano per nome, cosi' quelli in
+# app_escluse restano fermi senza usare "brew pin", che e' una
+# modifica permanente della configurazione di Homebrew.
+task_maint_brew_upgrade() {
+    if ! command -v brew >/dev/null 2>&1; then
+        ctx_note "Homebrew non installato"
+        return 0
+    fi
+    if [ "$TB_DRYRUN" -eq 1 ]; then
+        ctx_note "Elenco dai dati gia' scaricati: brew update non viene eseguito in simulazione"
+    else
+        ctx_note "Aggiornamento dell'elenco dei programmi..."
+        as_user brew update >/dev/null 2>&1 || ctx_note "brew update non riuscito: si usa l'elenco gia' presente"
+    fi
+    local da_fare escluse nome lista="" n=0
+    da_fare=$(as_user brew outdated --quiet 2>/dev/null)
+    escluse=$(app_escluse_elenco)
+    for nome in $da_fare; do
+        if [ -n "$escluse" ] && printf '%s\n' "$escluse" | grep -qxF -- "$nome"; then
+            ctx_note "   escluso (app_escluse): $nome"
+            continue
+        fi
+        lista="$lista $nome"
+        n=$((n + 1))
+    done
+    if [ "$n" -eq 0 ]; then
+        ctx_note "Nessun programma Homebrew da aggiornare"
+        return 0
+    fi
+    ctx_note "$n programmi da aggiornare:$lista"
+    [ "$TB_DRYRUN" -eq 1 ] && return 0
+
+    ctx_note "Aggiornamento in corso, puo' richiedere qualche minuto..."
+    # shellcheck disable=SC2086  # un nome di pacchetto per parola
+    if as_user brew upgrade $lista >/dev/null 2>&1; then
+        CTX_ITEMS=$((CTX_ITEMS + n))
+        ctx_note "$n programmi aggiornati"
+    else
+        ctx_fail "brew upgrade ha restituito un errore: alcuni programmi potrebbero non essere aggiornati"
     fi
     return 0
 }

@@ -97,8 +97,8 @@ cat > "$APP/Contents/Info.plist" <<'FINEPLIST'
     <key>CFBundleName</key>              <string>System Toolbox</string>
     <key>CFBundleDisplayName</key>       <string>System Toolbox</string>
     <key>CFBundleIdentifier</key>        <string>local.systemtoolbox.launcher</string>
-    <key>CFBundleVersion</key>           <string>1.0.0</string>
-    <key>CFBundleShortVersionString</key><string>1.0.0</string>
+    <key>CFBundleVersion</key>           <string>1.1.0</string>
+    <key>CFBundleShortVersionString</key><string>1.1.0</string>
     <key>CFBundlePackageType</key>       <string>APPL</string>
     <key>CFBundleExecutable</key>        <string>SystemToolbox</string>
     <key>CFBundleIconFile</key>          <string>icona</string>

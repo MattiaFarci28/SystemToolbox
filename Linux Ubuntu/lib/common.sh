@@ -15,7 +15,7 @@
 #   niente ${var,,}, niente mapfile.
 # ============================================================
 
-TB_VERSIONE="1.0.0"
+TB_VERSIONE="1.1.0"
 
 # ============================================================
 #   CODICI DI USCITA
@@ -58,6 +58,8 @@ CFG_notifica_fine=si
 CFG_ridimensiona_terminale=no
 CFG_simboli=ascii              # ascii | emoji
 CFG_avanzamento=si             # barra durante le operazioni lunghe
+CFG_backup_avviso_giorni=7     # backup piu' vecchio di cosi' = avviso
+CFG_app_escluse=""             # programmi da non aggiornare, separati da virgola
 
 cfg_load() {
     local f="$1"
@@ -77,7 +79,7 @@ cfg_load() {
         while case "$v" in *' ') v=${v% }; true;; *) false;; esac; do :; done
 
         case "$k" in
-            disco_avviso|disco_critico|ram_critica|swap_avviso_mb|avvii_avviso|uptime_avviso_giorni|log_da_conservare|cache_aggiornamenti_ore|misura_max_secondi)
+            disco_avviso|disco_critico|ram_critica|swap_avviso_mb|avvii_avviso|uptime_avviso_giorni|log_da_conservare|cache_aggiornamenti_ore|misura_max_secondi|backup_avviso_giorni)
                 case "$v" in ''|*[!0-9]*) continue ;; esac
                 printf -v "CFG_$k" '%s' "$v" ;;
             colori)
@@ -90,6 +92,11 @@ cfg_load() {
                 case "$v" in ascii|emoji) printf -v "CFG_$k" '%s' "$v" ;; esac ;;
             analisi_aggiornamenti|conferme_grafiche|notifica_fine|ridimensiona_terminale|avanzamento)
                 case "$v" in si|no) printf -v "CFG_$k" '%s' "$v" ;; esac ;;
+            app_escluse)
+                # Solo i caratteri dei nomi dei pacchetti: il valore finisce
+                # in una riga di comando e non deve poterla alterare.
+                case "$v" in *[!A-Za-z0-9._+@,\ -]*) continue ;; esac
+                CFG_app_escluse="$v" ;;
             *) : ;;   # chiave sconosciuta: ignorata di proposito
         esac
     done < "$f"
@@ -232,7 +239,10 @@ bytes_of_path_limitato() {
     local byte=0 parziale=0
     if [ -f "$tmp.fatto" ]; then
         # L'ultima riga di du -d 1 e' il totale del percorso stesso.
-        byte=$(awk -v obiettivo="$p" '$2 == obiettivo { t = $1 } END { print (t + 0) * 1024 }' "$tmp.fatto")
+        # du separa dimensione e percorso con una tabulazione: dividendo
+        # sugli spazi, un percorso come "Application Support" non
+        # corrispondeva mai e la misura completa usciva sempre 0.
+        byte=$(awk -F '\t' -v obiettivo="$p" '$2 == obiettivo { t = $1 } END { print (t + 0) * 1024 }' "$tmp.fatto")
         [ -z "$byte" ] && byte=0
     else
         kill "$pid" 2>/dev/null
@@ -240,7 +250,7 @@ bytes_of_path_limitato() {
         # Somma dei soli figli diretti gia' emessi: non si
         # sovrappongono fra loro, quindi e' un minimo attendibile.
         if [ -f "$tmp.parziale" ]; then
-            byte=$(awk -v obiettivo="$p" '$2 != obiettivo { t += $1 } END { print (t + 0) * 1024 }' "$tmp.parziale")
+            byte=$(awk -F '\t' -v obiettivo="$p" '$2 != obiettivo { t += $1 } END { print (t + 0) * 1024 }' "$tmp.parziale")
         fi
         [ -z "$byte" ] && byte=0
     fi
@@ -528,4 +538,183 @@ storico_confronta() {
         return 0
     done < "$TB_STORICO"
     return 0
+}
+
+# Elenco "app_escluse" della configurazione, un nome per riga.
+app_escluse_elenco() {
+    printf '%s\n' "$CFG_app_escluse" | tr ', ' '\n\n' | grep -v '^$'
+    return 0
+}
+
+# ============================================================
+#   NOVITA' RISPETTO ALL'ANALISI PRECEDENTE
+#   Gli avvisi dell'ultima analisi restano in logs/avvisi.txt.
+#   Cosi' l'analisi puo' dire cosa e' COMPARSO di nuovo, e
+#   l'esecuzione automatica puo' avvisare solo quando qualcosa
+#   e' peggiorato, invece di ripetere ogni volta le stesse cose.
+# ============================================================
+# Un file per tipo di analisi: la rapida controlla meno cose, e
+# confrontata con una completa farebbe sembrare "risolto" tutto
+# cio' che semplicemente non guarda.
+TB_AVVISI_MODO="completa"
+avvisi_file() {
+    [ -n "$TB_STORICO" ] || return 1
+    printf '%s/avvisi-%s.txt' "$(dirname "$TB_STORICO")" "$TB_AVVISI_MODO"
+}
+
+# I numeri cambiano fra un'analisi e l'altra (disco al 91%, poi
+# al 92%): per riconoscere lo stesso avviso si confronta il
+# testo con le cifre sostituite da #.
+avviso_chiave() { printf '%s\n' "$1" | sed 's/[0-9][0-9.,]*/#/g'; }
+
+# avvisi_nuovi "<avvisi attuali, uno per riga>"
+# Stampa quelli assenti nell'analisi precedente. Alla prima
+# analisi non stampa niente: senza un termine di confronto,
+# tutto sembrerebbe nuovo.
+avvisi_nuovi() {
+    local f a k
+    f=$(avvisi_file) || return 0
+    [ -f "$f" ] || return 0
+    printf '%s\n' "$1" | while IFS= read -r a; do
+        [ -z "$a" ] && continue
+        k=$(avviso_chiave "$a")
+        grep -qxF -- "$k" "$f" 2>/dev/null || printf '%s\n' "$a"
+    done
+    return 0
+}
+
+# Quanti avvisi dell'analisi precedente non ci sono piu'.
+avvisi_risolti() {
+    local f k chiavi n=0
+    f=$(avvisi_file) || { echo 0; return 0; }
+    [ -f "$f" ] || { echo 0; return 0; }
+    chiavi=$(printf '%s\n' "$1" | while IFS= read -r k; do [ -n "$k" ] && avviso_chiave "$k"; done)
+    while IFS= read -r k; do
+        [ -z "$k" ] && continue
+        printf '%s\n' "$chiavi" | grep -qxF -- "$k" || n=$((n + 1))
+    done < "$f"
+    echo "$n"
+}
+
+avvisi_salva() {
+    local f a
+    f=$(avvisi_file) || return 0
+    printf '%s\n' "$1" | while IFS= read -r a; do
+        [ -n "$a" ] && avviso_chiave "$a"
+    done > "$f" 2>/dev/null
+    return 0
+}
+
+# ============================================================
+#   STORICO DELLA SALUTE DEI DISCHI
+#   Una riga per disco e per analisi in logs/smart.txt:
+#     epoch|disco|stato|usura%|errori
+#   (- dove il dato non c'e'). Lo stato SMART dice "va bene o
+#   no" in quel momento; e' l'andamento che avvisa per tempo.
+# ============================================================
+smart_file() {
+    [ -n "$TB_STORICO" ] || return 1
+    printf '%s/smart.txt' "$(dirname "$TB_STORICO")"
+}
+
+# smart_confronto <disco> <stato> <usura|-> <errori|->
+# Confronta con l'ultima registrazione dello stesso disco e poi
+# registra quella attuale. Stampa:
+#   prima|<giorni>        se esiste una registrazione precedente
+#   peggio|<descrizione>  per ogni peggioramento
+smart_confronto() {
+    local disco="$1" stato="$2" usura="${3:--}" err="${4:--}" f prec
+    local t d sp up ep giorni
+    f=$(smart_file) || return 0
+    case "$usura" in ''|*[!0-9]*) usura="-" ;; esac
+    case "$err"   in ''|*[!0-9]*) err="-" ;; esac
+    if [ -f "$f" ]; then
+        prec=$(awk -F'|' -v d="$disco" '$2 == d { r = $0 } END { if (r != "") print r }' "$f")
+        if [ -n "$prec" ]; then
+            IFS='|' read -r t d sp up ep <<FINESMART
+$prec
+FINESMART
+            case "$t" in ''|*[!0-9]*) t=$(date +%s) ;; esac
+            giorni=$(( ($(date +%s) - t) / 86400 ))
+            printf 'prima|%s\n' "$giorni"
+            if [ "$usura" != "-" ] && [ "$up" != "-" ] && [ $(( usura - up )) -ge 5 ]; then
+                printf 'peggio|usura salita dal %s%% al %s%%\n' "$up" "$usura"
+            fi
+            if [ "$err" != "-" ] && [ "$ep" != "-" ] && [ "$err" -gt "$ep" ]; then
+                printf 'peggio|%s nuovi errori registrati dal disco\n' $(( err - ep ))
+            fi
+        fi
+    fi
+    printf '%s|%s|%s|%s|%s\n' "$(date +%s)" "$disco" "$stato" "$usura" "$err" >> "$f" 2>/dev/null
+    local n; n=$(wc -l < "$f" 2>/dev/null | tr -d ' ')
+    case "$n" in ''|*[!0-9]*) n=0 ;; esac
+    if [ "$n" -gt 400 ]; then
+        tail -200 "$f" > "$f.tmp" 2>/dev/null && mv "$f.tmp" "$f" 2>/dev/null
+    fi
+    return 0
+}
+
+# ============================================================
+#   CARTELLE E FILE PIU' GRANDI
+#   Sola lettura, con un tempo massimo: su una cartella
+#   personale di centinaia di GB attraversare tutto puo'
+#   richiedere minuti. Alla scadenza si mostra cio' che e'
+#   stato misurato, dichiarandolo parziale.
+#   Restano sullo stesso disco (-x / -xdev): un disco esterno o
+#   una cartella di rete montata dentro la home non contano.
+# ============================================================
+
+# grandi_cartelle <dir> <secondi>
+# Prima riga: "parziale|0" oppure "parziale|1". Poi
+# "kb<TAB>percorso" dei figli diretti, dal piu' grande.
+grandi_cartelle() {
+    local dir="$1" secondi="${2:-20}" dir_tmp tmp pid i=0 parziale=0 sorgente
+    dir_tmp=$(mktemp -d "${TMPDIR:-/tmp}/tb_grandi.XXXXXXXX" 2>/dev/null) || { echo "parziale|1"; return 0; }
+    tmp="$dir_tmp/du"
+    ( du -x -k -d 1 -- "$dir" > "$tmp.parziale" 2>/dev/null; mv "$tmp.parziale" "$tmp.fatto" 2>/dev/null ) &
+    pid=$!
+    while [ ! -f "$tmp.fatto" ] && kill -0 "$pid" 2>/dev/null && [ "$i" -lt $(( secondi * 10 )) ]; do
+        sleep 0.1
+        i=$(( i + 1 ))
+    done
+    sorgente="$tmp.fatto"
+    if [ ! -f "$tmp.fatto" ]; then
+        kill "$pid" 2>/dev/null
+        parziale=1
+        sorgente="$tmp.parziale"
+    fi
+    wait "$pid" 2>/dev/null
+    echo "parziale|$parziale"
+    [ -f "$sorgente" ] && awk -F '\t' -v o="$dir" '$2 != o' "$sorgente" | sort -rn
+    rm -rf "$dir_tmp" 2>/dev/null
+    return 0
+}
+
+# grandi_file <dir> <secondi> <soglia_mb>
+# Prima riga "parziale|0/1", poi "kb<TAB>percorso" dei file oltre
+# la soglia, dal piu' grande. find scrive man mano che trova:
+# anche se il tempo scade, i file gia' trovati sono validi.
+grandi_file() {
+    local dir="$1" secondi="${2:-20}" soglia="${3:-100}" dir_tmp parziale=0 rc=0 f
+    dir_tmp=$(mktemp -d "${TMPDIR:-/tmp}/tb_grandi.XXXXXXXX" 2>/dev/null) || { echo "parziale|1"; return 0; }
+    run_timeout "$secondi" find "$dir" -xdev -type f -size +"${soglia}"M > "$dir_tmp/trovati" 2>/dev/null || rc=$?
+    # find esce con 1 anche solo per una cartella non leggibile, cosa
+    # normale in una home: e' parziale solo se l'ha fermato il tempo
+    # (124 da timeout, 143 o 137 se terminato da un segnale).
+    case "$rc" in 124|137|143) parziale=1 ;; esac
+    echo "parziale|$parziale"
+    head -300 "$dir_tmp/trovati" | while IFS= read -r f; do
+        [ -f "$f" ] && du -k -- "$f" 2>/dev/null
+    done | sort -rn
+    rm -rf "$dir_tmp" 2>/dev/null
+    return 0
+}
+
+# Accorcia un percorso della home in ~/...
+# shellcheck disable=SC2088  # "~/" e' testo da mostrare, non un percorso
+percorso_breve() {
+    case "$1" in
+        "$TB_HOME"/*) printf '~/%s' "${1#"$TB_HOME"/}" ;;
+        *) printf '%s' "$1" ;;
+    esac
 }

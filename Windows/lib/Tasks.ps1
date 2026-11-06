@@ -45,6 +45,51 @@ function Get-UserProfilePath {
     return $out
 }
 
+# ------------------------------------------------------------
+#   Tabella di "winget upgrade"
+#   winget non ha un'uscita per i programmi: stampa una tabella
+#   con le colonne allineate a spazi e i titoli tradotti. Si
+#   cercano la riga di trattini, i titoli sopra (per le posizioni
+#   delle colonne) e le righe sotto fino alla prima vuota. La
+#   seconda tabella, quando c'e', riguarda pacchetti che winget
+#   non aggiorna da solo e viene ignorata.
+# ------------------------------------------------------------
+function ConvertFrom-WingetTabella {
+    param([string]$Testo)
+    if (-not $Testo) { return @() }
+    # Gli indicatori di avanzamento riscrivono la riga con un a capo
+    # semplice: conta solo l'ultimo pezzo.
+    $righe = @(($Testo -replace "`r`n", "`n") -split "`n" | ForEach-Object { ($_ -split "`r")[-1] })
+    $iSep = -1
+    for ($i = 1; $i -lt $righe.Count; $i++) { if ($righe[$i] -match '^-{10,}\s*$') { $iSep = $i; break } }
+    if ($iSep -lt 1) { return @() }
+    $inizi = @(0) + @([regex]::Matches($righe[$iSep - 1], '(?<=\s)\S') | ForEach-Object { $_.Index })
+    if ($inizi.Count -lt 4) { return @() }
+
+    $out = @()
+    for ($i = $iSep + 1; $i -lt $righe.Count; $i++) {
+        $r = $righe[$i]
+        if (-not $r.Trim()) { break }
+        if ($r.Length -le $inizi[2]) { continue }
+        $col = @()
+        for ($c = 0; $c -lt $inizi.Count; $c++) {
+            $da = $inizi[$c]
+            $fino = $r.Length
+            if ($c + 1 -lt $inizi.Count) { $fino = [math]::Min($inizi[$c + 1], $r.Length) }
+            if ($da -ge $r.Length) { $col += ''; continue }
+            $col += $r.Substring($da, $fino - $da).Trim()
+        }
+        if (-not $col[1] -or $col[1] -match '\s') { continue }
+        $out += [pscustomobject]@{
+            Nome        = $col[0]
+            Id          = $col[1]
+            Versione    = $col[2]
+            Disponibile = $(if ($col.Count -gt 3) { $col[3] } else { '' })
+        }
+    }
+    return $out
+}
+
 function Get-RunningBrowser {
     $nomi = @('msedge','chrome','firefox','brave','opera','vivaldi')
     return @(Get-Process -Name $nomi -ErrorAction SilentlyContinue |
@@ -804,6 +849,103 @@ $script:TaskRegistry = @(
         if ($r.ExitCode -eq 0) { $ctx.Note('Immagine di Windows integra o riparata correttamente') }
         else { $ctx.Fail(('DISM ha restituito il codice {0}' -f $r.ExitCode)) }
     }
+},
+# ------------------------------------------------------------
+#   AGGIORNAMENTI
+# ------------------------------------------------------------
+@{
+    Id        = 'upd_windows'
+    Nome      = 'Installa gli aggiornamenti di Windows'
+    Categoria = 'Aggiornamenti'
+    Livello   = 'Avanzato'
+    Descrizione = 'Scarica e installa gli aggiornamenti di Windows Update in sospeso, come farebbe Windows da solo (licenze comprese). L''elenco viene mostrato prima. Quelli che richiedono un''interazione vengono saltati. Puo'' richiedere il riavvio.'
+    Azione = {
+        param($ctx)
+        try {
+            $sess = New-Object -ComObject Microsoft.Update.Session
+            $sess.ClientApplicationID = 'System Toolbox'
+            $ricerca = $sess.CreateUpdateSearcher().Search("IsInstalled=0 and Type='Software' and IsHidden=0")
+        } catch {
+            $ctx.Fail('Windows Update non interrogabile: ' + $_.Exception.Message)
+            return
+        }
+        $daFare = New-Object -ComObject Microsoft.Update.UpdateColl
+        foreach ($u in $ricerca.Updates) {
+            if ($u.InstallationBehavior.CanRequestUserInput) {
+                $ctx.Note('   saltato, richiede interazione: ' + $u.Title)
+                continue
+            }
+            [void]$daFare.Add($u)
+        }
+        if ($daFare.Count -eq 0) { $ctx.Note('Nessun aggiornamento di Windows da installare'); return }
+        $ctx.Note(('{0} aggiornamenti da installare:' -f $daFare.Count))
+        foreach ($u in $daFare) { $ctx.Note('   ' + $u.Title) }
+        if ($ctx.DryRun) { return }
+
+        try {
+            foreach ($u in $daFare) { if (-not $u.EulaAccepted) { $u.AcceptEula() } }
+            $ctx.Note('Download in corso...')
+            $dl = $sess.CreateUpdateDownloader()
+            $dl.Updates = $daFare
+            [void]$dl.Download()
+            $ctx.Note('Installazione in corso, puo'' richiedere parecchi minuti...')
+            $inst = $sess.CreateUpdateInstaller()
+            $inst.Updates = $daFare
+            $ris = $inst.Install()
+        } catch {
+            $ctx.Fail('Installazione non riuscita: ' + $_.Exception.Message)
+            return
+        }
+        # ResultCode: 2 riuscito, 3 riuscito con errori, 4 fallito, 5 annullato.
+        for ($i = 0; $i -lt $daFare.Count; $i++) {
+            $codice = $ris.GetUpdateResult($i).ResultCode
+            if ($codice -eq 2) { $ctx.Items++ }
+            elseif ($codice -eq 3) { $ctx.Items++; $ctx.Fail('Installato con errori: ' + $daFare.Item($i).Title) }
+            else { $ctx.Fail(('Non installato (codice {0}): {1}' -f $codice, $daFare.Item($i).Title)) }
+        }
+        $ctx.Note(('{0} aggiornamenti installati' -f $ctx.Items))
+        if ($ris.RebootRequired) { $ctx.RebootNeeded = $true; $ctx.Note('Serve un riavvio per completare l''installazione') }
+    }
+},
+@{
+    Id        = 'upd_winget'
+    Nome      = 'Aggiorna le applicazioni (winget)'
+    Categoria = 'Aggiornamenti'
+    Livello   = 'Avanzato'
+    Descrizione = 'Aggiorna le applicazioni installate (browser, 7-Zip, VLC, strumenti di sviluppo...) con winget, gia'' presente in Windows 10 e 11. L''elenco viene mostrato prima. Quelle indicate in app_escluse nel file di configurazione restano alla versione attuale.'
+    Azione = {
+        param($ctx)
+        $wg = Get-Command winget.exe -ErrorAction SilentlyContinue
+        if (-not $wg) {
+            $ctx.Note('winget non disponibile: si installa con "Programma di installazione app" dal Microsoft Store')
+            return
+        }
+        $r = Invoke-Native -File $wg.Source -Arguments @('upgrade','--accept-source-agreements','--disable-interactivity') -TimeoutSec 180 -Utf8
+        if (-not $r.Avviato) { $ctx.Fail('winget non avviabile'); return }
+        $pacchetti = @(ConvertFrom-WingetTabella -Testo $r.Output)
+        $escluse = Get-AppEscluse
+        $daFare = @()
+        foreach ($p in $pacchetti) {
+            if ($escluse -contains $p.Id) { $ctx.Note(('   escluso (app_escluse): {0}' -f $p.Nome)); continue }
+            $daFare += $p
+        }
+        if ($daFare.Count -eq 0) { $ctx.Note('Nessuna applicazione da aggiornare'); return }
+        $ctx.Note(('{0} applicazioni da aggiornare:' -f $daFare.Count))
+        foreach ($p in $daFare) { $ctx.Note(('   {0}  {1} -> {2}' -f $p.Nome, $p.Versione, $p.Disponibile)) }
+        if ($ctx.DryRun) { return }
+
+        # Una per volta, per identificativo esatto: cosi' le escluse
+        # restano davvero ferme e un errore non blocca le altre.
+        foreach ($p in $daFare) {
+            $ctx.Note(('Aggiornamento di {0}...' -f $p.Nome))
+            $u = Invoke-LongNative -File $wg.Source -Arguments @('upgrade','--id',$p.Id,'--exact','--silent',
+                    '--accept-package-agreements','--accept-source-agreements','--disable-interactivity') -TimeoutSec 1800 -Ctx $ctx
+            if ($u.TimedOut)          { $ctx.Fail(('{0}: interrotto per timeout' -f $p.Nome)) }
+            elseif ($u.ExitCode -eq 0) { $ctx.Items++ }
+            else                       { $ctx.Fail(('{0}: winget ha restituito il codice {1}' -f $p.Nome, $u.ExitCode)) }
+        }
+        $ctx.Note(('{0} applicazioni aggiornate' -f $ctx.Items))
+    }
 }
 
 )
@@ -829,6 +971,7 @@ $script:Stime = @{
     'net_ipv6reset'        = 10
     'maint_restorepoint'   = 50;   'maint_sfc'            = 900
     'maint_dism_restore'   = 1200; 'maint_retrim'         = 90
+    'upd_windows'          = 900;  'upd_winget'           = 600
 }
 foreach ($t in $script:TaskRegistry) {
     $t.Stima = 30
@@ -903,6 +1046,7 @@ function Get-TaskSet {
         'RetePulizia'     { @('net_flushdns','net_arpcache','net_renew','net_registerdns') }
         'ReteReset'       { @('net_winsock','net_ipreset','net_ipv6reset') }
         'Manutenzione'    { @('maint_restorepoint','maint_retrim','maint_sfc','maint_dism_restore') }
+        'Aggiornamenti'   { @('upd_windows','upd_winget') }
         default           { @() }
     }
     return @($ids | ForEach-Object { Get-Task -Id $_ } | Where-Object { $_ })

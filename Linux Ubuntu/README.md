@@ -66,6 +66,7 @@ Lavora solo nella tua cartella personale. Si toglie con `./installa-scorciatoie.
 | 7 | Aggiornamenti del sistema |
 | 8 | Riparazione e disco |
 | 9 | Manutenzione consigliata (3 + DNS) |
+| D | Diagnosi guidata |
 | P | Selezione personalizzata |
 | L | Percorso della cartella dei log |
 | S | Simulazione sì/no |
@@ -124,6 +125,12 @@ Durante gli aggiornamenti compare una barra di avanzamento.
 
 Docker si sceglie solo dalla selezione personalizzata (`P`).
 
+### Diagnosi guidata (tasto D)
+
+Parti dal problema, "Internet non va", "il computer è lento" o "il disco è pieno": la diagnosi
+controlla solo ciò che lo spiega, un passo alla volta, e propone l'operazione utile se c'è.
+È anche nel menu delle finestre grafiche.
+
 ## Cosa controlla l'analisi
 
 | Sezione | Rapida | Completa |
@@ -137,6 +144,12 @@ Docker si sceglie solo dalla selezione personalizzata (`P`).
 | Salute del disco (SMART), temperature, firewall | | ✓ |
 | Servizi da riavviare dopo un aggiornamento (needrestart) | | ✓ |
 | Spazio recuperabile | | ✓ |
+| Backup: Timeshift e Backup di Ubuntu (Déjà Dup) | | ✓ |
+| Cartelle e file più grandi della cartella personale | | ✓ |
+
+Alla fine, **Novità dall'ultima analisi** mostra cosa è comparso o sparito rispetto alla volta prima.
+La salute dei dischi viene confrontata con le analisi precedenti: se usura o errori aumentano,
+compare un avviso prima che lo stato SMART diventi critico.
 
 ## Distribuzioni
 
@@ -171,8 +184,9 @@ Copia `toolbox.conf.esempio` in `toolbox.conf`.
 | `misura_max_secondi` | 12 | tempo massimo per misurare una cartella |
 | `conferme_grafiche` | no | `si` chiede conferma con una finestra |
 | `notifica_fine` | si | notifica quando finisce |
+| `backup_avviso_giorni` | 7 | giorni oltre cui un backup è considerato vecchio |
 
-Non usate su Linux: `avvii_avviso` (conta il tempo di avvio), `ridimensiona_terminale`, `lingua`.
+Non usate su Linux: `avvii_avviso` (conta il tempo di avvio), `app_escluse` (i pacchetti si tengono fermi con `apt-mark hold`), `ridimensiona_terminale`, `lingua`.
 
 ## Da sapere
 
@@ -180,6 +194,8 @@ Non usate su Linux: `avvii_avviso` (conta il tempo di avvio), `ridimensiona_term
   Le parti che non hanno senso vengono saltate e dichiarate.
 - L'aggiornamento completo può rimuovere pacchetti: leggi sempre l'elenco prima di confermare.
 - La correzione `pam_lastlog` interviene solo se il modulo manca davvero (Ubuntu 24.04 e successive).
+- In modalità automatica la notifica compare solo se ci sono problemi **nuovi** rispetto all'esecuzione precedente.
+- Timeshift salva il sistema, ma di norma esclude la cartella personale: per i documenti serve Backup (Déjà Dup).
 
 ## Collaudo
 
@@ -187,7 +203,7 @@ Non usate su Linux: `avvii_avviso` (conta il tempo di avvio), `ridimensiona_term
 bash test/collaudo.sh
 ```
 
-125 controlli, non toccano il sistema.
+158 controlli, non toccano il sistema.
 Lo strumento è stato provato anche su un PC Ubuntu reale. DNF, pacman e zypper non sono ancora stati provati.
 
 ## File

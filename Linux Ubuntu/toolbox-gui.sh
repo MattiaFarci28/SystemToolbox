@@ -347,6 +347,45 @@ l'interfaccia. La password non passa da questa finestra."
 }
 
 # ------------------------------------------------------------
+#   Diagnosi guidata
+# ------------------------------------------------------------
+gui_diagnosi() {
+    local tipo out="$TB_TMP/diagnosi.txt" proposta nome
+    tipo=$(zenity --list --radiolist --title="$TITOLO - Diagnosi guidata" \
+        --text="Qual e' il problema?" \
+        --column="" --column="tipo" --column="Problema" \
+        --hide-column=2 --print-column=2 --width=460 --height=260 \
+        TRUE  "rete"  "Internet non va" \
+        FALSE "lento" "Il computer e' lento" \
+        FALSE "disco" "Il disco e' pieno" \
+        2>/dev/null) || return 0
+    : > "$out"; : > "$TB_TMP/proposta"
+    (
+        echo "# Controlli in corso..."
+        case "$tipo" in
+            rete)  diagnosi_rete  > "$out" 2>&1 ;;
+            lento) diagnosi_lento > "$out" 2>&1 ;;
+            disco) diagnosi_disco > "$out" 2>&1 ;;
+        esac
+        # La sottoshell non puo' restituire variabili: la proposta
+        # passa da un file.
+        echo "$DIAG_PROPOSTA" > "$TB_TMP/proposta"
+        echo "100"
+    ) | zenity --progress --title="$TITOLO" --text="Diagnosi in corso..." \
+               --pulsate --auto-close --no-cancel --width=420 2>/dev/null
+    gui_mostra_file "$out" "$TITOLO - Diagnosi"
+    proposta=$(cat "$TB_TMP/proposta" 2>/dev/null)
+    case "$proposta" in
+        Rete)          nome="Manutenzione rete" ;;
+        PuliziaSicura) nome="Pulizia sicura" ;;
+        *)             return 0 ;;
+    esac
+    zenity --question --title="$TITOLO" --text="Eseguire ora: $nome?" \
+           --ok-label="Esegui" --cancel-label="No" 2>/dev/null || return 0
+    gui_esegui "$(task_set "$proposta")"
+}
+
+# ------------------------------------------------------------
 #   Menu principale
 # ------------------------------------------------------------
 gui_menu() {
@@ -362,6 +401,7 @@ gui_menu() {
             TRUE  "rapida"    "Analisi rapida - lo stato in mezzo minuto, non modifica nulla" \
             FALSE "completa"  "Analisi completa - tutto, aggiornamenti e disco compresi" \
             FALSE "consigliata" "Manutenzione consigliata - pulizia sicura e cache DNS" \
+            FALSE "diagnosi"  "Diagnosi guidata - Internet non va, PC lento, disco pieno" \
             FALSE "scegli"    "Scegli le operazioni una per una" \
             FALSE "simulazione" "Attiva o disattiva la simulazione (ora: $stato_sim)" \
             FALSE "log"       "Apri il log di questa sessione" \
@@ -371,6 +411,7 @@ gui_menu() {
             rapida)      gui_analisi rapida ;;
             completa)    gui_analisi completa ;;
             consigliata) gui_esegui "$(task_set Consigliata)" ;;
+            diagnosi)    gui_diagnosi ;;
             scegli)      ids=$(gui_scegli_operazioni) && gui_esegui "$ids" ;;
             simulazione) if [ "$TB_DRYRUN" -eq 1 ]; then TB_DRYRUN=0; else TB_DRYRUN=1; fi ;;
             log)         gui_mostra_file "$TB_LOG" "$TITOLO - Log" ;;

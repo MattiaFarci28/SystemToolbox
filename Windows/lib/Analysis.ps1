@@ -496,6 +496,7 @@ function Get-StartupApprovato {
         'HKCU:\SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\StartupApproved\Run',
         'HKCU:\SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\StartupApproved\StartupFolder',
         'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\StartupApproved\Run',
+        'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\StartupApproved\Run32',
         'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\StartupApproved\StartupFolder'
     )
     foreach ($k in $chiavi) {
@@ -527,12 +528,21 @@ function Get-SysStartup {
 
             $attivo = $true
             if ($approvato.ContainsKey($s.Name)) { $attivo = [bool]$approvato[$s.Name] }
+            # Dove Windows registra "attivo/disattivato" per questa voce:
+            # serve a leggerne lo stato esatto e a cambiarlo.
+            $app = Get-ApprovazioneAvvio -Origine $s.Location -Nome $s.Name -Comando $s.Command -Utente $s.User
+            if ($app) {
+                $stato = Get-StatoApprovazione -Chiave $app.Chiave -Valore $app.Valore
+                if ($null -ne $stato) { $attivo = $stato }
+            }
             $out += [pscustomobject]@{
                 Nome    = $s.Name
                 Comando = $s.Command
                 Origine = $s.Location
                 Utente  = $s.User
                 Attivo  = $attivo
+                Chiave  = $(if ($app) { $app.Chiave } else { $null })
+                Valore  = $(if ($app) { $app.Valore } else { $null })
             }
         }
     } catch { }
@@ -947,4 +957,162 @@ function Get-SysNetwork {
         DnsMs   = $dnsMs
         HttpsOk = $https
     }
+}
+
+# ------------------------------------------------------------
+#   Programmi all'avvio: attivazione e disattivazione
+#   E' lo stesso meccanismo della scheda Avvio di Gestione
+#   attivita': un valore binario nelle chiavi StartupApproved.
+#   Il programma non viene toccato, la voce nel registro di avvio
+#   resta al suo posto, e si riattiva in qualsiasi momento.
+# ------------------------------------------------------------
+function Get-ApprovazioneAvvio {
+    param([string]$Origine, [string]$Nome, [string]$Comando, [string]$Utente)
+    $rel = 'SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\StartupApproved'
+    # Nelle cartelle di avvio il nome registrato e' quello del file.
+    $collegamento = $Nome + '.lnk'
+    if ($Comando -match '([^\\]+\.lnk)$') { $collegamento = $matches[1] }
+    switch -Regex ($Origine) {
+        '^HKLM\\SOFTWARE\\Wow6432Node\\.*\\Run$' { return @{ Chiave = "HKLM:\$rel\Run32"; Valore = $Nome } }
+        '^HKLM\\.*\\Run$'                         { return @{ Chiave = "HKLM:\$rel\Run";   Valore = $Nome } }
+        '^HKU\\([^\\]+)\\.*\\Run$'                { return @{ Chiave = ('Registry::HKEY_USERS\{0}\{1}\Run' -f $matches[1], $rel); Valore = $Nome } }
+        '^HKCU\\.*\\Run$'                         { return @{ Chiave = "HKCU:\$rel\Run";   Valore = $Nome } }
+        '^Common Startup$'                        { return @{ Chiave = "HKLM:\$rel\StartupFolder"; Valore = $collegamento } }
+        '^Startup$' {
+            # Cartella di avvio di un utente: se e' un altro utente
+            # si passa dal suo ramo del registro.
+            $radice = 'HKCU:'
+            try {
+                $sid = (New-Object System.Security.Principal.NTAccount($Utente)).Translate([System.Security.Principal.SecurityIdentifier]).Value
+                if ($sid -ne [System.Security.Principal.WindowsIdentity]::GetCurrent().User.Value) {
+                    $radice = 'Registry::HKEY_USERS\' + $sid
+                }
+            } catch { }
+            return @{ Chiave = ('{0}\{1}\StartupFolder' -f $radice, $rel); Valore = $collegamento }
+        }
+    }
+    return $null
+}
+
+# $true attivo, $false disattivato, $null se non c'e' indicazione.
+function Get-StatoApprovazione {
+    param([string]$Chiave, [string]$Valore)
+    try {
+        $v = (Get-ItemProperty -LiteralPath $Chiave -Name $Valore -ErrorAction Stop).$Valore
+        if ($v -is [byte[]] -and $v.Length -gt 0) { return (($v[0] -band 1) -eq 0) }
+    } catch { }
+    return $null
+}
+
+function Set-AvvioAttivo {
+    param([Parameter(Mandatory=$true)]$Voce, [bool]$Attivo)
+    if (-not $Voce.Chiave) { throw 'voce non gestibile da qui' }
+    # 12 byte: 02 = attivo; 03 seguito dall'ora della disattivazione
+    # (FILETIME, dal quinto byte) = disattivato. E' il formato che
+    # scrive Gestione attivita'.
+    $dati = New-Object byte[] 12
+    if ($Attivo) {
+        $dati[0] = 2
+    } else {
+        $dati[0] = 3
+        [BitConverter]::GetBytes((Get-Date).ToFileTime()).CopyTo($dati, 4)
+    }
+    if (-not (Test-Path -LiteralPath $Voce.Chiave)) { New-Item -Path $Voce.Chiave -Force | Out-Null }
+    New-ItemProperty -LiteralPath $Voce.Chiave -Name $Voce.Valore -PropertyType Binary -Value $dati -Force | Out-Null
+    Write-Log ('Avvio: "{0}" {1}' -f $Voce.Nome, $(if ($Attivo) { 'riattivato' } else { 'disattivato' })) 'INFO'
+}
+
+# ------------------------------------------------------------
+#   Backup
+#   Il rischio piu' grande non e' un PC lento, e' perdere i dati.
+#   Si guardano Cronologia file (con la data dell'ultimo backup)
+#   e la sincronizzazione delle cartelle con OneDrive.
+# ------------------------------------------------------------
+function Get-SysBackup {
+    $fhConf = Test-Path -LiteralPath (Join-Path $env:LOCALAPPDATA 'Microsoft\Windows\FileHistory\Configuration\Config1.xml') -ErrorAction SilentlyContinue
+    $fhUltimo = $null
+    try {
+        $k = Get-ItemProperty -LiteralPath 'HKCU:\Software\Microsoft\Windows\CurrentVersion\FileHistory' -ErrorAction Stop
+        if ($k.ProtectedUpToTime -and [long]$k.ProtectedUpToTime -gt 0) {
+            $fhUltimo = [DateTime]::FromFileTime([long]$k.ProtectedUpToTime)
+            $fhConf = $true
+        }
+    } catch { }
+    $documenti = [Environment]::GetFolderPath('MyDocuments')
+    $desktop   = [Environment]::GetFolderPath('Desktop')
+    return [pscustomobject]@{
+        CronologiaConfigurata = [bool]$fhConf
+        CronologiaUltimo      = $fhUltimo
+        OneDrive              = (($documenti -like '*\OneDrive*') -or ($desktop -like '*\OneDrive*'))
+    }
+}
+
+# ------------------------------------------------------------
+#   Cartelle e file piu' grandi della cartella personale
+#   Una sola visita dell'albero, con un tempo massimo: se scade
+#   si mostra cio' che e' stato misurato, dichiarandolo parziale.
+#   Junction e link simbolici non si seguono: porterebbero fuori
+#   dalla cartella o creerebbero cicli e doppi conteggi. I file
+#   "solo nel cloud" di OneDrive non occupano spazio e non contano.
+# ------------------------------------------------------------
+function Get-SysGrandi {
+    param([string]$Radice = $env:USERPROFILE, [int]$SecondiMax = 30, [long]$SogliaFile = 100MB)
+    $soloCloud = 0x400000 -bor 0x40000 -bor 0x1000   # RecallOnDataAccess, RecallOnOpen, Offline
+    $cartelle = @{}
+    $file = New-Object System.Collections.ArrayList
+    $sw = [Diagnostics.Stopwatch]::StartNew()
+    $parziale = $false
+    $pila = New-Object System.Collections.Stack
+    $sciolti = '(file nella cartella personale)'
+
+    try {
+        foreach ($f in (New-Object System.IO.DirectoryInfo($Radice)).EnumerateFileSystemInfos()) {
+            if ($f -is [System.IO.DirectoryInfo]) {
+                if (-not (Test-CartellaDaVisitare $f)) { continue }
+                $cartelle[$f.Name] = [long]0
+                $pila.Push(@($f, $f.Name))
+            } elseif (-not ([int]$f.Attributes -band $soloCloud)) {
+                $cartelle[$sciolti] = [long]$cartelle[$sciolti] + $f.Length
+                if ($f.Length -ge $SogliaFile) { [void]$file.Add([pscustomobject]@{ Percorso = $f.FullName; Byte = $f.Length }) }
+            }
+        }
+    } catch { }
+
+    while ($pila.Count -gt 0) {
+        if ($sw.Elapsed.TotalSeconds -gt $SecondiMax) { $parziale = $true; break }
+        $voce = $pila.Pop()
+        $primo = $voce[1]
+        try {
+            # L'enumerazione puo' fallire a meta' (accesso negato):
+            # si tiene cio' che e' gia' stato letto.
+            foreach ($f in $voce[0].EnumerateFileSystemInfos()) {
+                if ($f -is [System.IO.DirectoryInfo]) {
+                    if (Test-CartellaDaVisitare $f) { $pila.Push(@($f, $primo)) }
+                } elseif (-not ([int]$f.Attributes -band $soloCloud)) {
+                    $cartelle[$primo] = [long]$cartelle[$primo] + $f.Length
+                    if ($f.Length -ge $SogliaFile) { [void]$file.Add([pscustomobject]@{ Percorso = $f.FullName; Byte = $f.Length }) }
+                }
+            }
+        } catch { }
+    }
+
+    return [pscustomobject]@{
+        Radice   = $Radice
+        Cartelle = @($cartelle.GetEnumerator() | Where-Object { $_.Value -gt 0 } | Sort-Object Value -Descending |
+                     Select-Object -First 10 | ForEach-Object { [pscustomobject]@{ Nome = $_.Key; Byte = [long]$_.Value } })
+        File     = @($file | Sort-Object Byte -Descending | Select-Object -First 10)
+        Parziale = $parziale
+        Secondi  = $SecondiMax
+    }
+}
+
+# Le cartelle di OneDrive sono reparse point "cloud" e vanno
+# visitate; junction e link simbolici no.
+function Test-CartellaDaVisitare {
+    param([System.IO.DirectoryInfo]$Cartella)
+    if (-not ([int]$Cartella.Attributes -band 0x400)) { return $true }
+    try {
+        $tipo = (Get-Item -LiteralPath $Cartella.FullName -Force -ErrorAction Stop).LinkType
+        return (-not $tipo)
+    } catch { return $false }
 }

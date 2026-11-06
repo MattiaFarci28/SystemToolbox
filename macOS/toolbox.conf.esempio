@@ -114,3 +114,11 @@ avanzamento=si
 # gia' aperta, vedersela ridimensionare sotto le mani da'
 # fastidio.
 ridimensiona_terminale=no
+
+# Giorni oltre i quali un backup e' considerato vecchio e compare
+# un avviso nell'analisi completa.
+backup_avviso_giorni=7
+
+# Programmi di Homebrew da NON aggiornare con "Aggiorna tutto",
+# separati da virgola (per esempio: python@3.12, node).
+app_escluse=

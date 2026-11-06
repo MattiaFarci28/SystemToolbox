@@ -183,8 +183,9 @@ show_disk_health() {
     local d
     for d in /dev/sd? /dev/nvme?n1; do
         [ -b "$d" ] || continue
-        local stato
-        stato=$(as_root_quiet smartctl -H "$d" | grep -iE 'overall-health|SMART Health' | sed 's/.*: *//')
+        local out stato usura err
+        out=$(as_root_quiet smartctl -H -A "$d")
+        stato=$(printf '%s\n' "$out" | grep -iE 'overall-health|SMART Health' | sed 's/.*: *//' | head -1)
         if [ -z "$stato" ]; then
             ui_dim "$d: stato non leggibile senza privilegi gia' disponibili"
             continue
@@ -194,6 +195,15 @@ show_disk_health() {
             *) ui_kvc "$d" "$C_RED" "$stato"
                avviso_grave "SMART di $d riporta '$stato': fai subito un backup." ;;
         esac
+        # Usura (NVMe) ed errori: settori riallocati, in attesa e
+        # non correggibili (SATA), errori di integrita' (NVMe).
+        usura=$(printf '%s\n' "$out" | awk -F: '/Percentage Used/{gsub(/[ %]/, "", $2); print $2; exit}')
+        err=$(printf '%s\n' "$out" | awk '
+            /Media and Data Integrity Errors/ { split($0, a, ":"); gsub(/[ ,]/, "", a[2]); e += a[2]; t = 1 }
+            ($1 == "5" || $1 == "197" || $1 == "198") && $10 ~ /^[0-9]+$/ { e += $10; t = 1 }
+            END { if (t) print e }')
+        [ -n "$usura" ] && ui_dim "$d: usura ${usura}%"
+        smart_mostra_andamento "$(basename "$d")" "$stato" "${usura:--}" "${err:--}"
     done
 }
 
@@ -703,6 +713,8 @@ FINEREV
 analisi() {
     local modo="${1:-completa}"
     AVVISI=""
+    AVVISI_NUOVI=0
+    TB_AVVISI_MODO="$modo"
 
     ui_title "$( [ "$modo" = "rapida" ] && echo 'Analisi rapida' || echo 'Analisi completa del sistema' )"
     log_write "--- Analisi $modo" "STEP"
@@ -750,7 +762,9 @@ analisi() {
         show_disk_health
         show_temp
         show_firewall
+        show_backup
         show_recuperabile
+        show_grandi
     fi
 
     # --- confronto con l'esecuzione precedente ---
@@ -771,6 +785,8 @@ analisi() {
         ui_kv "Avvisi" "$av_allora allora, $n_avvisi adesso"
     fi
 
+    show_novita
+
     ui_title "Cosa merita attenzione"
     if [ -z "$(echo "$AVVISI" | tr -d '\n')" ]; then
         ui_ok "Nessuna criticita' rilevata. Il sistema risulta in ordine."
@@ -786,6 +802,315 @@ analisi() {
     fi
 
     storico_scrivi "$n_avvisi"
+    avvisi_salva "$AVVISI"
     echo ""
     ui_dim "Log della sessione: $TB_LOG"
+}
+# ------------------------------------------------------------
+#   Andamento della salute di un disco
+#   smart_mostra_andamento <disco> <stato> <usura|-> <errori|->
+# ------------------------------------------------------------
+smart_mostra_andamento() {
+    local disco="$1" tipo testo giorni="" peggio=0
+    while IFS='|' read -r tipo testo; do
+        case "$tipo" in
+            prima)  giorni="$testo" ;;
+            peggio) peggio=1
+                    ui_warn "Disco $disco: $testo"
+                    avviso_add "Disco $disco: $testo rispetto a $giorni giorni fa. Fai un backup e tieni d'occhio il disco." ;;
+        esac
+    done <<FINEANDAMENTO
+$(smart_confronto "$@")
+FINEANDAMENTO
+    if [ -n "$giorni" ] && [ "$peggio" -eq 0 ]; then
+        ui_dim "Nessun peggioramento rispetto a $giorni giorni fa."
+    fi
+    return 0
+}
+
+# ------------------------------------------------------------
+#   Novita' rispetto all'analisi precedente dello stesso tipo
+# ------------------------------------------------------------
+show_novita() {
+    local f nuovi risolti
+    f=$(avvisi_file) || return 0
+    [ -f "$f" ] || return 0           # prima analisi: niente da confrontare
+    nuovi=$(avvisi_nuovi "$AVVISI")
+    risolti=$(avvisi_risolti "$AVVISI")
+    AVVISI_NUOVI=$(printf '%s\n' "$nuovi" | grep -c '[^[:space:]]')
+    ui_section "NOVITA' DALL'ULTIMA ANALISI"
+    if [ "$AVVISI_NUOVI" -eq 0 ] && [ "$risolti" -eq 0 ]; then
+        ui_ok "Nessun problema nuovo: la situazione e' la stessa."
+        return 0
+    fi
+    if [ "$AVVISI_NUOVI" -gt 0 ]; then
+        printf '%s\n' "$nuovi" | while IFS= read -r a; do
+            [ -n "$a" ] && ui_warn "nuovo: $a"
+        done
+    fi
+    [ "$risolti" -gt 0 ] && ui_ok "$risolti problemi dell'analisi precedente non ci sono piu'."
+    return 0
+}
+
+# ------------------------------------------------------------
+#   Cartelle e file piu' grandi della cartella personale
+#   Solo da guardare: spesso lo spazio "sparito" sta in un
+#   video, in una macchina virtuale o in un download dimenticato,
+#   che nessuna pulizia automatica deve toccare.
+# ------------------------------------------------------------
+show_grandi() {
+    ui_section "SPAZIO NELLA CARTELLA PERSONALE"
+    ui_dim "Le cartelle e i file piu' grandi, solo da guardare: niente viene toccato."
+    local sec out parz kb p
+    sec=$(( CFG_misura_max_secondi * 2 ))
+    out=$(grandi_cartelle "$TB_HOME" "$sec")
+    parz=$(printf '%s\n' "$out" | head -1 | cut -d'|' -f2)
+    printf '\n   %sCartelle%s\n' "$C_WHITE" "$C_OFF"
+    printf '%s\n' "$out" | sed 1d | head -10 | while IFS=$'\t' read -r kb p; do
+        [ -z "$kb" ] && continue
+        printf '   %12s  %s\n' "$(format_bytes $(( kb * 1024 )))" "$(percorso_breve "$p")"
+    done
+    [ "$parz" = "1" ] && ui_dim "Misura interrotta dopo ${sec} secondi: i valori sono minimi."
+
+    out=$(grandi_file "$TB_HOME" "$sec" 100)
+    parz=$(printf '%s\n' "$out" | head -1 | cut -d'|' -f2)
+    printf '\n   %sFile oltre 100 MB%s\n' "$C_WHITE" "$C_OFF"
+    if [ -z "$(printf '%s\n' "$out" | sed 1d)" ]; then
+        ui_dim "Nessuno."
+    else
+        printf '%s\n' "$out" | sed 1d | head -10 | while IFS=$'\t' read -r kb p; do
+            [ -z "$kb" ] && continue
+            printf '   %12s  %s\n' "$(format_bytes $(( kb * 1024 )))" "$(percorso_breve "$p")"
+        done
+    fi
+    [ "$parz" = "1" ] && ui_dim "Ricerca interrotta dopo ${sec} secondi: potrebbero esserci altri file grandi."
+    return 0
+}
+
+# ------------------------------------------------------------
+#   Backup
+#   Si cercano i due strumenti piu' diffusi: Timeshift (istantanee
+#   del sistema) e Deja Dup, il "Backup" di Ubuntu (documenti).
+#   Sono complementari: Timeshift di norma esclude la home.
+# ------------------------------------------------------------
+
+# backup_riga <nome> <AAAA-MM-GG o vuoto> <motivo se vuoto>
+backup_riga() {
+    local nome="$1" data="$2" giorni
+    if [ -z "$data" ]; then
+        ui_kvc "$nome" "$C_YELLOW" "$3"
+        return 0
+    fi
+    giorni=$(giorni_da_oggi "$data")
+    case "$giorni" in ''|*[!0-9-]*) ui_kv "$nome" "ultimo backup $data"; return 0 ;; esac
+    giorni=$(( -giorni ))
+    [ "$giorni" -lt 0 ] && giorni=0
+    if [ "$giorni" -gt "$CFG_backup_avviso_giorni" ]; then
+        ui_kvc "$nome" "$C_YELLOW" "ultimo backup $data ($giorni giorni fa)"
+        avviso_add "L'ultimo backup di $nome e' di $giorni giorni fa."
+    else
+        ui_kvc "$nome" "$C_GREEN" "ultimo backup $data ($giorni giorni fa)"
+    fi
+    return 0
+}
+
+show_backup() {
+    ui_section "BACKUP"
+    if [ "$TB_VIRTUALE" -eq 1 ]; then
+        ui_dim "Non applicabile qui: in WSL e nei container i dati si proteggono dal sistema che li ospita."
+        return
+    fi
+    local trovati=0 data f b lista
+
+    if command -v timeshift >/dev/null 2>&1; then
+        trovati=$((trovati + 1))
+        data=""
+        lista=$(as_root_quiet timeshift --list 2>/dev/null)
+        if [ -n "$lista" ]; then
+            data=$(printf '%s\n' "$lista" | grep -oE '[0-9]{4}-[0-9]{2}-[0-9]{2}_[0-9]{2}-[0-9]{2}-[0-9]{2}' | sort | tail -1 | cut -c1-10)
+            backup_riga "Timeshift" "$data" "configurato, nessuna istantanea trovata"
+            [ -z "$data" ] && avviso_add "Timeshift e' installato ma non risulta nessuna istantanea."
+        else
+            for f in /timeshift/snapshots/*; do
+                [ -d "$f" ] || continue
+                b=$(basename "$f" | cut -c1-10)
+                [ "$b" \> "$data" ] && data="$b"
+            done
+            backup_riga "Timeshift" "$data" "data dell'ultima istantanea non leggibile senza privilegi"
+        fi
+        ui_dim "Timeshift salva il sistema: di norma la cartella personale e' esclusa."
+    fi
+
+    if command -v gsettings >/dev/null 2>&1 \
+       && gsettings list-schemas 2>/dev/null | grep -qx 'org.gnome.DejaDup'; then
+        trovati=$((trovati + 1))
+        data=$(as_user gsettings get org.gnome.DejaDup last-backup 2>/dev/null | tr -d "'" | cut -c1-10)
+        case "$data" in [0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]) ;; *) data="" ;; esac
+        backup_riga "Backup (Deja Dup)" "$data" "installato, nessun backup eseguito"
+        [ -z "$data" ] && avviso_add "Il Backup di Ubuntu (Deja Dup) non ha mai salvato i tuoi documenti."
+    fi
+
+    if [ "$trovati" -eq 0 ]; then
+        ui_warn "Nessun programma di backup rilevato."
+        ui_wrap "Senza un backup, un guasto del disco fa perdere tutto. Su Ubuntu c'e' gia' \"Backup\" (Deja Dup) per i documenti; Timeshift protegge il sistema. Se usi un altro programma, ignora questo avviso." 3 "$C_DIM"
+        avviso_add "Nessun backup rilevato: configura Backup (Deja Dup) per i documenti."
+    fi
+}
+
+# ============================================================
+#   DIAGNOSI GUIDATA
+#   Si parte da un sintomo e si controlla solo cio' che lo
+#   spiega, un passo alla volta. Alla fine DIAG_PROPOSTA contiene
+#   l'insieme di operazioni da proporre (nome per task_set), o
+#   resta vuota.
+# ============================================================
+DIAG_PROPOSTA=""
+
+diagnosi_rete() {
+    DIAG_PROPOSTA=""
+    ui_section "INTERNET NON VA"
+    [ "$TB_WSL" -eq 1 ] && diag_passo info "In WSL la rete e' quella di Windows: se qui non va, controlla prima Windows."
+    local iface="" gw="" ip=""
+    if command -v ip >/dev/null 2>&1; then
+        gw=$(ip -4 route show default 2>/dev/null | awk '/default/{print $3; exit}')
+        iface=$(ip -4 route show default 2>/dev/null | awk '/default/{for (i = 1; i < NF; i++) if ($i == "dev") { print $(i+1); exit }}')
+        if [ -z "$iface" ]; then
+            diag_passo ko "Nessuna connessione di rete attiva" "Controlla che il Wi-Fi sia acceso e collegato a una rete, oppure che il cavo sia inserito."
+            diag_conclusione "Il computer non e' collegato a nessuna rete."
+            return 0
+        fi
+        diag_passo ok "Collegato alla rete ($iface)"
+        ip=$(ip -4 -o addr show dev "$iface" scope global 2>/dev/null | awk '{print $4; exit}' | cut -d/ -f1)
+        case "$ip" in
+            ''|169.254.*)
+                diag_passo ko "Indirizzo IP non valido (${ip:-assente})" "Il router non ha assegnato un indirizzo. Rinnovarlo di solito risolve."
+                DIAG_PROPOSTA="Rete"
+                diag_conclusione "Il computer e' collegato ma non ha ricevuto un indirizzo dal router."
+                return 0 ;;
+        esac
+        diag_passo ok "Indirizzo IP $ip"
+    fi
+
+    if ping -c 2 -W 3 1.1.1.1 >/dev/null 2>&1; then
+        diag_passo ok "Internet raggiungibile"
+    else
+        if [ -n "$gw" ] && ping -c 2 -W 3 "$gw" >/dev/null 2>&1; then
+            diag_passo ko "Il router ($gw) risponde, ma Internet no" "Riavvia il router. Se il problema resta, e' la linea: contatta il gestore."
+            diag_conclusione "Il problema e' oltre il router, non nel computer."
+        else
+            diag_passo ko "Il router non risponde" "Il collegamento fra computer e router non funziona: avvicinati al router, riavvialo o prova con il cavo."
+            diag_conclusione "Il problema e' fra il computer e il router."
+        fi
+        return 0
+    fi
+
+    if getent hosts www.ubuntu.com >/dev/null 2>&1; then
+        diag_passo ok "Risoluzione dei nomi (DNS) funzionante"
+    else
+        diag_passo ko "La risoluzione dei nomi (DNS) non funziona" "Internet c'e', ma i nomi dei siti non vengono tradotti in indirizzi. Svuotare la cache DNS spesso risolve."
+        DIAG_PROPOSTA="Rete"
+        diag_conclusione "Problema di DNS."
+        return 0
+    fi
+
+    local https=1
+    if command -v curl >/dev/null 2>&1; then
+        curl -sS -o /dev/null -m 10 https://www.ubuntu.com 2>/dev/null || https=0
+    elif command -v wget >/dev/null 2>&1; then
+        wget -q --spider -T 10 https://www.ubuntu.com 2>/dev/null || https=0
+    fi
+    if [ "$https" -eq 1 ]; then
+        diag_passo ok "Navigazione sicura (HTTPS) funzionante"
+        diag_conclusione "La connessione funziona. Se un sito in particolare non si apre, il problema e' di quel sito."
+    else
+        diag_passo ko "I siti sicuri (HTTPS) non si aprono" "Rete e DNS funzionano: il blocco e' probabilmente un firewall, un proxy o una VPN."
+        diag_conclusione "Qualcosa blocca il traffico web: controlla VPN, proxy e firewall."
+    fi
+    return 0
+}
+
+diagnosi_lento() {
+    DIAG_PROPOSTA=""
+    ui_section "IL COMPUTER E' LENTO"
+    local cause=0 tot lib pct st sf su_mb src rota carico core nome giorni
+
+    tot=$(awk '/MemTotal/{print $2}' /proc/meminfo 2>/dev/null)
+    lib=$(awk '/MemAvailable/{print $2}' /proc/meminfo 2>/dev/null)
+    case "$tot" in ''|*[!0-9]*) tot=0 ;; esac
+    case "$lib" in ''|*[!0-9]*) lib=0 ;; esac
+    st=$(awk '/SwapTotal/{print $2}' /proc/meminfo 2>/dev/null)
+    sf=$(awk '/SwapFree/{print $2}' /proc/meminfo 2>/dev/null)
+    su_mb=$(( (${st:-0} - ${sf:-0}) / 1024 ))
+    pct=0; [ "$tot" -gt 0 ] && pct=$(( (tot - lib) * 100 / tot ))
+    if [ "$pct" -ge "$CFG_ram_critica" ] || [ "$su_mb" -ge "$CFG_swap_avviso_mb" ]; then
+        diag_passo ko "Memoria insufficiente: RAM al ${pct}%, $su_mb MB di swap in uso" "Chiudi programmi e schede del browser che non usi; se succede sempre, serve piu' RAM."
+        cause=$((cause + 1))
+    else
+        diag_passo ok "Memoria sufficiente (RAM al ${pct}%)"
+    fi
+
+    if [ "$TB_VIRTUALE" -eq 0 ] && command -v lsblk >/dev/null 2>&1; then
+        src=$(findmnt -n -o SOURCE / 2>/dev/null)
+        rota=$(lsblk -dno ROTA "$src" 2>/dev/null | tr -d ' ' | head -1)
+        case "$rota" in
+            1) diag_passo ko "Il disco di sistema e' meccanico (HDD)" "E' la causa di lentezza piu' comune sui PC datati: sostituirlo con un SSD da' un miglioramento che nessuna pulizia puo' avvicinare."
+               cause=$((cause + 1)) ;;
+            0) diag_passo ok "Disco di sistema SSD" ;;
+        esac
+    fi
+
+    pct=$(df -P / 2>/dev/null | awk 'NR==2{gsub(/%/,"",$5); print $5}')
+    case "$pct" in ''|*[!0-9]*) pct=0 ;; esac
+    if [ "$pct" -ge "$CFG_disco_avviso" ]; then
+        diag_passo ko "Disco pieno al ${pct}%" "Con poco spazio libero aggiornamenti e programmi possono rallentare o fallire. Una pulizia sicura recupera spazio senza rischi."
+        DIAG_PROPOSTA="PuliziaSicura"
+        cause=$((cause + 1))
+    else
+        diag_passo ok "Spazio su disco sufficiente (${pct}% occupato)"
+    fi
+
+    carico=$(awk '{print int($1 + 0.5)}' /proc/loadavg 2>/dev/null)
+    core=$(nproc 2>/dev/null || echo 1)
+    case "$carico" in ''|*[!0-9]*) carico=0 ;; esac
+    if [ "$carico" -gt "$core" ]; then
+        nome=$(ps -eo comm= --sort=-pcpu 2>/dev/null | head -1)
+        diag_passo ko "Processore sovraccarico (carico $carico su $core core)" "Il programma che usa piu' processore e' ${nome:-sconosciuto}: se non ti serve, chiudilo."
+        cause=$((cause + 1))
+    else
+        diag_passo ok "Processore non sovraccarico (carico $carico su $core core)"
+    fi
+
+    if [ "$TB_VIRTUALE" -eq 0 ]; then
+        giorni=$(awk '{print int($1 / 86400)}' /proc/uptime 2>/dev/null)
+        case "$giorni" in ''|*[!0-9]*) giorni=0 ;; esac
+        if [ "$giorni" -ge "$CFG_uptime_avviso_giorni" ]; then
+            diag_passo ko "Acceso da $giorni giorni" "Un riavvio libera la memoria e applica kernel e librerie aggiornati."
+            cause=$((cause + 1))
+        else
+            diag_passo ok "Riavviato di recente ($giorni giorni fa)"
+        fi
+    fi
+
+    if [ "$cause" -eq 0 ]; then
+        diag_conclusione "Nessuna causa evidente. Se la lentezza riguarda un solo programma, il problema e' probabilmente di quel programma. L'analisi completa mostra anche i servizi piu' lenti all'avvio."
+    else
+        diag_conclusione "Trovate $cause possibili cause: parti dalla prima dell'elenco."
+    fi
+    return 0
+}
+
+diagnosi_disco() {
+    DIAG_PROPOSTA="PuliziaSicura"
+    ui_section "DISCO PIENO"
+    local tot lib pct
+    tot=$(df -Pk / 2>/dev/null | awk 'NR==2{print $2}')
+    lib=$(df -Pk / 2>/dev/null | awk 'NR==2{print $4}')
+    case "$tot" in ''|*[!0-9]*) tot=0 ;; esac
+    case "$lib" in ''|*[!0-9]*) lib=0 ;; esac
+    pct=0; [ "$tot" -gt 0 ] && pct=$(( (tot - lib) * 100 / tot ))
+    diag_passo info "Spazio libero: $(format_bytes $(( lib * 1024 ))) su $(format_bytes $(( tot * 1024 ))) (${pct}% occupato)"
+    show_recuperabile
+    show_grandi
+    diag_conclusione "Parti dalla pulizia sicura, che non tocca i tuoi file. Per recuperare di piu' guarda le voci qui sopra: pacchetti orfani, kernel vecchi e revisioni snap si tolgono dalla pulizia avanzata."
+    return 0
 }

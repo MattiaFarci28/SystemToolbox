@@ -211,6 +211,9 @@ show_disk() {
             ui_kvc "Stato SMART" "$C_RED" "$smart"
             avviso_grave "SMART del disco riporta '$smart': fai subito un backup."
         fi
+        # Su macOS diskutil espone solo lo stato complessivo: lo
+        # storico registra quello, e un cambio di stato emerge.
+        smart_mostra_andamento "di avvio" "$smart" - -
     fi
 }
 
@@ -571,6 +574,8 @@ show_recuperabile() {
 analisi() {
     local modo="${1:-completa}"
     AVVISI=""
+    AVVISI_NUOVI=0
+    TB_AVVISI_MODO="$modo"
 
     tb_init_arch
     ui_title "$( [ "$modo" = "rapida" ] && echo 'Analisi rapida' || echo 'Analisi completa del sistema' )"
@@ -606,7 +611,9 @@ analisi() {
 
     if [ "$modo" != "rapida" ]; then
         show_updates
+        show_backup
         show_recuperabile
+        show_grandi
     fi
 
     # --- confronto con l'esecuzione precedente ---
@@ -627,6 +634,8 @@ analisi() {
         ui_kv "Avvisi" "$av_allora allora, $n_avvisi adesso"
     fi
 
+    show_novita
+
     ui_title "Cosa merita attenzione"
     if [ -z "$(echo "$AVVISI" | tr -d '\n')" ]; then
         ui_ok "Nessuna criticita' rilevata. Il sistema risulta in ordine."
@@ -642,6 +651,300 @@ analisi() {
     fi
 
     storico_scrivi "$n_avvisi"
+    avvisi_salva "$AVVISI"
     echo ""
     ui_dim "Log della sessione: $TB_LOG"
+}
+
+# ------------------------------------------------------------
+#   Andamento della salute di un disco
+#   smart_mostra_andamento <disco> <stato> <usura|-> <errori|->
+# ------------------------------------------------------------
+smart_mostra_andamento() {
+    local disco="$1" tipo testo giorni="" peggio=0
+    while IFS='|' read -r tipo testo; do
+        case "$tipo" in
+            prima)  giorni="$testo" ;;
+            peggio) peggio=1
+                    ui_warn "Disco $disco: $testo"
+                    avviso_add "Disco $disco: $testo rispetto a $giorni giorni fa. Fai un backup e tieni d'occhio il disco." ;;
+        esac
+    done <<FINEANDAMENTO
+$(smart_confronto "$@")
+FINEANDAMENTO
+    if [ -n "$giorni" ] && [ "$peggio" -eq 0 ]; then
+        ui_dim "Nessun peggioramento rispetto a $giorni giorni fa."
+    fi
+    return 0
+}
+
+# ------------------------------------------------------------
+#   Novita' rispetto all'analisi precedente dello stesso tipo
+# ------------------------------------------------------------
+show_novita() {
+    local f nuovi risolti
+    f=$(avvisi_file) || return 0
+    [ -f "$f" ] || return 0           # prima analisi: niente da confrontare
+    nuovi=$(avvisi_nuovi "$AVVISI")
+    risolti=$(avvisi_risolti "$AVVISI")
+    AVVISI_NUOVI=$(printf '%s\n' "$nuovi" | grep -c '[^[:space:]]')
+    ui_section "NOVITA' DALL'ULTIMA ANALISI"
+    if [ "$AVVISI_NUOVI" -eq 0 ] && [ "$risolti" -eq 0 ]; then
+        ui_ok "Nessun problema nuovo: la situazione e' la stessa."
+        return 0
+    fi
+    if [ "$AVVISI_NUOVI" -gt 0 ]; then
+        printf '%s\n' "$nuovi" | while IFS= read -r a; do
+            [ -n "$a" ] && ui_warn "nuovo: $a"
+        done
+    fi
+    [ "$risolti" -gt 0 ] && ui_ok "$risolti problemi dell'analisi precedente non ci sono piu'."
+    return 0
+}
+
+# ------------------------------------------------------------
+#   Backup
+#   Il rischio piu' grande per chi usa un Mac non e' la lentezza,
+#   e' perdere i dati. Si controlla Time Machine: se e'
+#   configurato e quando ha fatto l'ultimo backup.
+# ------------------------------------------------------------
+show_backup() {
+    ui_section "BACKUP"
+    if ! command -v tmutil >/dev/null 2>&1; then
+        ui_dim "Time Machine non disponibile su questo sistema."
+        return
+    fi
+    local dest data giorni
+    dest=$(tmutil destinationinfo 2>/dev/null)
+    if [ -z "$dest" ] || printf '%s' "$dest" | grep -qi 'No destinations'; then
+        ui_warn "Time Machine non e' configurato."
+        ui_wrap "Senza un backup, un guasto del disco o un furto fanno perdere tutto. Collega un disco esterno e attiva Time Machine. Se usi un altro programma di backup, ignora questo avviso." 3 "$C_DIM"
+        avviso_add "Nessun backup configurato: attiva Time Machine su un disco esterno."
+        return
+    fi
+    ui_kvc "Time Machine" "$C_GREEN" "configurato"
+
+    # Data dell'ultimo backup: prima da tmutil (richiede il disco
+    # collegato), poi dalle preferenze di Time Machine.
+    data=$(tmutil latestbackup 2>/dev/null | grep -oE '[0-9]{4}-[0-9]{2}-[0-9]{2}' | tail -1)
+    if [ -z "$data" ]; then
+        data=$(defaults read /Library/Preferences/com.apple.TimeMachine 2>/dev/null \
+               | grep -oE '[0-9]{4}-[0-9]{2}-[0-9]{2}' | sort | tail -1)
+    fi
+    if [ -z "$data" ]; then
+        ui_dim "Data dell'ultimo backup non leggibile: collega il disco di backup, oppure concedi al Terminale l'Accesso completo al disco."
+        return
+    fi
+    giorni=$(giorni_da_oggi "$data")
+    case "$giorni" in ''|*[!0-9-]*) ui_kv "Ultimo backup" "$data"; return ;; esac
+    giorni=$(( -giorni ))
+    [ "$giorni" -lt 0 ] && giorni=0
+    if [ "$giorni" -gt "$CFG_backup_avviso_giorni" ]; then
+        ui_kvc "Ultimo backup" "$C_YELLOW" "$data ($giorni giorni fa)"
+        avviso_add "L'ultimo backup di Time Machine e' di $giorni giorni fa: collega il disco di backup."
+    else
+        ui_kvc "Ultimo backup" "$C_GREEN" "$data ($giorni giorni fa)"
+    fi
+}
+
+# ------------------------------------------------------------
+#   Cartelle e file piu' grandi della cartella personale
+#   Solo da guardare: spesso lo spazio "sparito" sta in un
+#   video, in una macchina virtuale o in un download dimenticato,
+#   che nessuna pulizia automatica deve toccare.
+# ------------------------------------------------------------
+show_grandi() {
+    ui_section "SPAZIO NELLA CARTELLA PERSONALE"
+    ui_dim "Le cartelle e i file piu' grandi, solo da guardare: niente viene toccato."
+    local sec out parz kb p
+    sec=$(( CFG_misura_max_secondi * 2 ))
+    out=$(grandi_cartelle "$TB_HOME" "$sec")
+    parz=$(printf '%s\n' "$out" | head -1 | cut -d'|' -f2)
+    printf '\n   %sCartelle%s\n' "$C_WHITE" "$C_OFF"
+    printf '%s\n' "$out" | sed 1d | head -10 | while IFS=$'\t' read -r kb p; do
+        [ -z "$kb" ] && continue
+        printf '   %12s  %s\n' "$(format_bytes $(( kb * 1024 )))" "$(percorso_breve "$p")"
+    done
+    [ "$parz" = "1" ] && ui_dim "Misura interrotta dopo ${sec} secondi: i valori sono minimi."
+
+    out=$(grandi_file "$TB_HOME" "$sec" 100)
+    parz=$(printf '%s\n' "$out" | head -1 | cut -d'|' -f2)
+    printf '\n   %sFile oltre 100 MB%s\n' "$C_WHITE" "$C_OFF"
+    if [ -z "$(printf '%s\n' "$out" | sed 1d)" ]; then
+        ui_dim "Nessuno."
+    else
+        printf '%s\n' "$out" | sed 1d | head -10 | while IFS=$'\t' read -r kb p; do
+            [ -z "$kb" ] && continue
+            printf '   %12s  %s\n' "$(format_bytes $(( kb * 1024 )))" "$(percorso_breve "$p")"
+        done
+    fi
+    [ "$parz" = "1" ] && ui_dim "Ricerca interrotta dopo ${sec} secondi: potrebbero esserci altri file grandi."
+    return 0
+}
+
+# ============================================================
+#   DIAGNOSI GUIDATA
+#   Si parte da un sintomo e si controlla solo cio' che lo
+#   spiega, un passo alla volta. Alla fine DIAG_PROPOSTA contiene
+#   l'insieme di operazioni da proporre (nome per task_set), o
+#   resta vuota.
+# ============================================================
+DIAG_PROPOSTA=""
+
+diagnosi_rete() {
+    DIAG_PROPOSTA=""
+    ui_section "INTERNET NON VA"
+    local iface ip gw
+    iface=$(route -n get default 2>/dev/null | awk '/interface:/{print $2; exit}')
+    if [ -z "$iface" ]; then
+        diag_passo ko "Nessuna connessione di rete attiva" "Controlla che il Wi-Fi sia acceso e collegato a una rete, oppure che il cavo sia inserito."
+        diag_conclusione "Il Mac non e' collegato a nessuna rete."
+        return 0
+    fi
+    diag_passo ok "Collegato alla rete ($iface)"
+
+    ip=$(ipconfig getifaddr "$iface" 2>/dev/null)
+    case "$ip" in
+        ''|169.254.*)
+            diag_passo ko "Indirizzo IP non valido (${ip:-assente})" "Il router non ha assegnato un indirizzo al Mac. Rinnovarlo di solito risolve."
+            DIAG_PROPOSTA="Rete"
+            diag_conclusione "Il Mac e' collegato ma non ha ricevuto un indirizzo dal router."
+            return 0 ;;
+    esac
+    diag_passo ok "Indirizzo IP $ip"
+
+    if ping -c 2 -t 4 1.1.1.1 >/dev/null 2>&1; then
+        diag_passo ok "Internet raggiungibile"
+    else
+        gw=$(route -n get default 2>/dev/null | awk '/gateway:/{print $2; exit}')
+        if [ -n "$gw" ] && ping -c 2 -t 3 "$gw" >/dev/null 2>&1; then
+            diag_passo ko "Il router ($gw) risponde, ma Internet no" "Riavvia il router. Se il problema resta, e' la linea: contatta il gestore."
+            diag_conclusione "Il problema e' oltre il router, non nel Mac."
+        else
+            diag_passo ko "Il router non risponde" "Il collegamento fra Mac e router non funziona: avvicinati al router, riavvialo o prova con il cavo."
+            diag_conclusione "Il problema e' fra il Mac e il router."
+        fi
+        return 0
+    fi
+
+    if host -W 4 www.apple.com >/dev/null 2>&1 || nslookup www.apple.com >/dev/null 2>&1; then
+        diag_passo ok "Risoluzione dei nomi (DNS) funzionante"
+    else
+        diag_passo ko "La risoluzione dei nomi (DNS) non funziona" "Internet c'e', ma i nomi dei siti non vengono tradotti in indirizzi. Svuotare la cache DNS spesso risolve."
+        DIAG_PROPOSTA="Rete"
+        diag_conclusione "Problema di DNS."
+        return 0
+    fi
+
+    if curl -sS -o /dev/null -m 10 https://www.apple.com 2>/dev/null; then
+        diag_passo ok "Navigazione sicura (HTTPS) funzionante"
+        diag_conclusione "La connessione funziona. Se un sito in particolare non si apre, il problema e' di quel sito."
+    else
+        diag_passo ko "I siti sicuri (HTTPS) non si aprono" "Rete e DNS funzionano: il blocco e' probabilmente un firewall, un proxy o una VPN."
+        diag_conclusione "Qualcosa blocca il traffico web: controlla VPN, proxy e firewall."
+    fi
+    return 0
+}
+
+diagnosi_lento() {
+    DIAG_PROPOSTA=""
+    ui_section "IL MAC E' LENTO"
+    local cause=0 swap_mb pct tipo top cpu nome boot giorni n d limite
+
+    swap_mb=$(sysctl -n vm.swapusage 2>/dev/null | sed -n 's/.*used = \([0-9]*\).*/\1/p')
+    case "$swap_mb" in ''|*[!0-9]*) swap_mb=0 ;; esac
+    if [ "$swap_mb" -ge "$CFG_swap_avviso_mb" ]; then
+        diag_passo ko "Memoria insufficiente: $swap_mb MB di swap in uso" "Il Mac sta usando il disco come memoria. Chiudi app e schede del browser che non usi; se succede sempre, serve piu' RAM."
+        cause=$((cause + 1))
+    else
+        diag_passo ok "Memoria sufficiente (swap: $swap_mb MB)"
+    fi
+
+    tipo=$(system_profiler SPStorageDataType 2>/dev/null | awk -F': ' '/Medium Type/{gsub(/^ +/,"",$2); print $2; exit}')
+    case "$tipo" in
+        *Rotational*|*HDD*)
+            diag_passo ko "Il disco di avvio e' meccanico (HDD)" "E' la causa di lentezza piu' comune sui Mac datati: sostituirlo con un SSD da' un miglioramento che nessuna pulizia puo' avvicinare."
+            cause=$((cause + 1)) ;;
+        '') diag_passo info "Tipo di disco non rilevato" ;;
+        *)  diag_passo ok "Disco di avvio SSD" ;;
+    esac
+
+    pct=$(df -k / 2>/dev/null | awk 'NR==2{ if ($2 > 0) print int($3 * 100 / $2) }')
+    case "$pct" in ''|*[!0-9]*) pct=0 ;; esac
+    if [ "$pct" -ge "$CFG_disco_avviso" ]; then
+        diag_passo ko "Disco pieno al ${pct}%" "Con poco spazio libero macOS rallenta. Una pulizia sicura recupera spazio senza rischi."
+        DIAG_PROPOSTA="PuliziaSicura"
+        cause=$((cause + 1))
+    else
+        diag_passo ok "Spazio su disco sufficiente (${pct}% occupato)"
+    fi
+
+    top=$(ps -Ao pcpu=,comm= -r 2>/dev/null | head -1)
+    cpu=$(printf '%s' "$top" | awk '{print int($1)}')
+    nome=$(basename "$(printf '%s' "$top" | awk '{ $1=""; sub(/^ /, ""); print }')")
+    case "$cpu" in ''|*[!0-9]*) cpu=0 ;; esac
+    if [ "$cpu" -ge 80 ]; then
+        diag_passo ko "Un programma occupa il processore: $nome ($cpu%)" "Se non lo stai usando, chiudilo. Se e' un processo di sistema (mds, photoanalysisd), di solito finisce da solo."
+        cause=$((cause + 1))
+    else
+        diag_passo ok "Nessun programma blocca il processore"
+    fi
+
+    boot=$(sysctl -n kern.boottime 2>/dev/null | sed -n 's/.*sec = \([0-9]*\).*/\1/p')
+    if [ -n "$boot" ]; then
+        giorni=$(( ($(date +%s) - boot) / 86400 ))
+        if [ "$giorni" -ge "$CFG_uptime_avviso_giorni" ]; then
+            diag_passo ko "Acceso da $giorni giorni" "Un riavvio libera la memoria e applica gli aggiornamenti in sospeso."
+            cause=$((cause + 1))
+        else
+            diag_passo ok "Riavviato di recente ($giorni giorni fa)"
+        fi
+    fi
+
+    n=0
+    for d in "$TB_HOME/Library/LaunchAgents" /Library/LaunchAgents /Library/LaunchDaemons; do
+        [ -d "$d" ] || continue
+        for f in "$d"/*.plist; do
+            [ -f "$f" ] || continue
+            case "$(basename "$f")" in com.apple.*) ;; *) n=$((n + 1)) ;; esac
+        done
+    done
+    if [ "$n" -ge "$CFG_avvii_avviso" ]; then
+        diag_passo ko "$n programmi partono all'avvio" "Disattiva quelli che non ti servono dalla voce V del menu: si possono riattivare in qualsiasi momento."
+        cause=$((cause + 1))
+    else
+        diag_passo ok "Pochi programmi all'avvio ($n)"
+    fi
+
+    if [ "$TB_ARCH" = "intel" ] || [ "$(uname -m)" = "x86_64" ]; then
+        limite=$(pmset -g therm 2>/dev/null | awk -F= '/CPU_Speed_Limit/{gsub(/ /,"",$2); print $2}')
+        if [ -n "$limite" ] && [ "$limite" -lt 100 ] 2>/dev/null; then
+            diag_passo ko "Processore rallentato dal calore (al $limite%)" "Il Mac si sta proteggendo dal surriscaldamento: pulisci le prese d'aria e non tenerlo su superfici morbide."
+            cause=$((cause + 1))
+        fi
+    fi
+
+    if [ "$cause" -eq 0 ]; then
+        diag_conclusione "Nessuna causa evidente. Se la lentezza riguarda un solo programma, il problema e' probabilmente di quel programma."
+    else
+        diag_conclusione "Trovate $cause possibili cause: parti dalla prima dell'elenco."
+    fi
+    return 0
+}
+
+diagnosi_disco() {
+    DIAG_PROPOSTA="PuliziaSicura"
+    ui_section "DISCO PIENO"
+    local lib tot pct
+    tot=$(df -k / 2>/dev/null | awk 'NR==2{print $2}')
+    lib=$(df -k / 2>/dev/null | awk 'NR==2{print $4}')
+    case "$tot" in ''|*[!0-9]*) tot=0 ;; esac
+    case "$lib" in ''|*[!0-9]*) lib=0 ;; esac
+    pct=0; [ "$tot" -gt 0 ] && pct=$(( (tot - lib) * 100 / tot ))
+    diag_passo info "Spazio libero: $(format_bytes $(( lib * 1024 ))) su $(format_bytes $(( tot * 1024 ))) (${pct}% occupato)"
+    show_snapshots
+    show_recuperabile
+    show_grandi
+    diag_conclusione "Parti dalla pulizia sicura, che non tocca i tuoi file. Per recuperare di piu' guarda le voci qui sopra: snapshot di Time Machine e backup di iPhone si gestiscono dalla pulizia avanzata e dalla voce B."
+    return 0
 }

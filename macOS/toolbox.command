@@ -397,6 +397,163 @@ FINESCELTI
 }
 
 # ============================================================
+#   PROGRAMMI ALL'AVVIO
+#   Agenti e demoni di terze parti. Si disattivano con
+#   "launchctl disable": il file resta al suo posto e si
+#   riattiva con "launchctl enable". Niente viene cancellato.
+#   L'effetto vale dal prossimo accesso o riavvio.
+# ============================================================
+
+# Una riga "dominio|etichetta|origine" per elemento.
+avvio_elenco() {
+    local d f lab dom orig uid
+    uid=$(id -u "$TB_USER" 2>/dev/null || id -u)
+    for d in "$TB_HOME/Library/LaunchAgents" /Library/LaunchAgents /Library/LaunchDaemons; do
+        [ -d "$d" ] || continue
+        case "$d" in
+            */LaunchDaemons)       dom="system";   orig="sistema" ;;
+            "$TB_HOME"/*)          dom="gui/$uid"; orig="utente" ;;
+            *)                     dom="gui/$uid"; orig="tutti gli utenti" ;;
+        esac
+        for f in "$d"/*.plist; do
+            [ -f "$f" ] || continue
+            case "$(basename "$f")" in com.apple.*) continue ;; esac
+            lab=$(defaults read "${f%.plist}" Label 2>/dev/null)
+            [ -z "$lab" ] && lab=$(basename "$f" .plist)
+            printf '%s|%s|%s\n' "$dom" "$lab" "$orig"
+        done
+    done
+    return 0
+}
+
+# avvio_disattivato <etichetta> <output di launchctl print-disabled>
+# Le versioni recenti scrivono "=> true", quelle vecchie "=> disabled".
+avvio_disattivato() {
+    printf '%s\n' "$2" | grep -F "\"$1\"" | grep -qE '=> (true|disabled)'
+}
+
+gestione_avvio() {
+    [ -t 1 ] && clear
+    ui_title "Programmi all'avvio"
+    local elenco uid dis_gui dis_sys
+    elenco=$(avvio_elenco)
+    if [ -z "$elenco" ]; then
+        echo ""
+        ui_ok "Nessun programma di terze parti parte all'avvio."
+        return 0
+    fi
+    uid=$(id -u "$TB_USER" 2>/dev/null || id -u)
+    dis_gui=$(launchctl print-disabled "gui/$uid" 2>/dev/null)
+    dis_sys=$(launchctl print-disabled system 2>/dev/null)
+
+    echo ""
+    local n=0 dom lab orig stato dis
+    while IFS='|' read -r dom lab orig; do
+        [ -z "$lab" ] && continue
+        n=$((n + 1))
+        if [ "$dom" = "system" ]; then dis="$dis_sys"; else dis="$dis_gui"; fi
+        if avvio_disattivato "$lab" "$dis"; then
+            stato="${C_DIM}[spento]${C_OFF}"
+        else
+            stato="${C_GREEN}[attivo]${C_OFF}"
+        fi
+        printf '   %2d)  %s  %-44.44s %s%s%s\n' "$n" "$stato" "$lab" "$C_DIM" "$orig" "$C_OFF"
+    done <<FINEAVVIO
+$elenco
+FINEAVVIO
+
+    echo ""
+    ui_wrap "Indica i numeri da cambiare, separati da spazio o virgola: quelli attivi vengono spenti, quelli spenti riattivati. Niente viene cancellato. INVIO per uscire." 3 "$C_DIM"
+    printf '  %sSelezione:%s ' "$C_WHITE" "$C_OFF"
+    local sel; read -r sel
+    [ -z "$sel" ] && return 0
+
+    local scelte="" p riga
+    for p in $(echo "$sel" | tr ',;' '  '); do
+        case "$p" in ''|*[!0-9]*) ui_warn "Valore non valido: $p"; continue ;; esac
+        riga=$(printf '%s\n' "$elenco" | sed -n "${p}p")
+        [ -n "$riga" ] && scelte="$scelte$riga"$'\n' || ui_warn "Numero fuori intervallo: $p"
+    done
+    [ -z "$scelte" ] && { ui_warn "Nessuna voce valida."; return 0; }
+
+    echo ""
+    local azione sistema=0
+    while IFS='|' read -r dom lab orig; do
+        [ -z "$lab" ] && continue
+        if [ "$dom" = "system" ]; then dis="$dis_sys"; sistema=1; else dis="$dis_gui"; fi
+        if avvio_disattivato "$lab" "$dis"; then azione="riattivare"; else azione="spegnere"; fi
+        printf '   %-11s %s\n' "$azione" "$lab"
+    done <<FINEAVVIO
+$scelte
+FINEAVVIO
+    echo ""
+    ui_yesno "Procedere?" "n" || { ui_dim "Annullato."; return 0; }
+    if [ "$TB_DRYRUN" -eq 1 ]; then
+        ui_dim "Simulazione attiva: nessuna modifica applicata."
+        return 0
+    fi
+    if [ "$sistema" -eq 1 ] && ! tb_need_root; then
+        ui_err "Privilegi non concessi: le voci di sistema non verranno modificate."
+    fi
+
+    local ok=0 ko=0 cmd
+    while IFS='|' read -r dom lab orig; do
+        [ -z "$lab" ] && continue
+        if [ "$dom" = "system" ]; then dis="$dis_sys"; else dis="$dis_gui"; fi
+        if avvio_disattivato "$lab" "$dis"; then cmd="enable"; else cmd="disable"; fi
+        if [ "$dom" = "system" ]; then
+            if [ "$TB_ROOT_OK" -eq 1 ] || [ "$(id -u)" -eq 0 ]; then
+                as_root launchctl "$cmd" "system/$lab" 2>/dev/null && ok=$((ok + 1)) || ko=$((ko + 1))
+            else
+                ko=$((ko + 1))
+            fi
+        else
+            as_user launchctl "$cmd" "$dom/$lab" 2>/dev/null && ok=$((ok + 1)) || ko=$((ko + 1))
+        fi
+        log_write "avvio: launchctl $cmd $dom/$lab" "INFO"
+    done <<FINEAVVIO
+$scelte
+FINEAVVIO
+    echo ""
+    [ "$ok" -gt 0 ] && ui_ok "$ok voci modificate. L'effetto vale dal prossimo accesso o riavvio."
+    [ "$ko" -gt 0 ] && ui_err "$ko voci non modificate."
+    return 0
+}
+
+# ============================================================
+#   DIAGNOSI GUIDATA
+# ============================================================
+diagnosi_guidata() {
+    [ -t 1 ] && clear
+    ui_title "Diagnosi guidata"
+    echo ""
+    printf '     1)  Internet non va\n'
+    printf "     2)  Il Mac e' lento\n"
+    printf "     3)  Il disco e' pieno\n"
+    echo ""
+    printf '   %sScelta:%s ' "$C_WHITE" "$C_OFF"
+    local d; read -r d
+    case "$d" in
+        1) diagnosi_rete ;;
+        2) tb_init_arch; diagnosi_lento ;;
+        3) diagnosi_disco ;;
+        *) return 0 ;;
+    esac
+    [ -z "$DIAG_PROPOSTA" ] && return 0
+    local nome
+    case "$DIAG_PROPOSTA" in
+        Rete)          nome="Manutenzione rete" ;;
+        PuliziaSicura) nome="Pulizia sicura" ;;
+        *)             nome="$DIAG_PROPOSTA" ;;
+    esac
+    echo ""
+    if ui_yesno "Eseguire ora: $nome?" "s"; then
+        esegui_insieme "$nome" "$(task_set "$DIAG_PROPOSTA")" 1 ""
+    fi
+    return 0
+}
+
+# ============================================================
 #   MODALITA NON INTERATTIVA
 # ============================================================
 if [ "$AUTO" -eq 1 ]; then
@@ -407,9 +564,13 @@ if [ "$AUTO" -eq 1 ]; then
         # il JSON, alla chiusura.
         analisi rapida            >/dev/null 2>&1
         esegui_insieme "Manutenzione consigliata" "$(task_set Consigliata)" 1 "" >/dev/null 2>&1
+        [ "${AVVISI_NUOVI:-0}" -gt 0 ] && ui_notifica "$AVVISI_NUOVI nuovi problemi rilevati: apri il report"
     else
         analisi rapida
         esegui_insieme "Manutenzione consigliata" "$(task_set Consigliata)" 1 ""
+        # Si avvisa solo se qualcosa e' peggiorato rispetto all'ultima
+        # volta: ripetere ogni settimana le stesse cose le fa ignorare.
+        [ "${AVVISI_NUOVI:-0}" -gt 0 ] && ui_notifica "$AVVISI_NUOVI nuovi problemi rilevati: apri il report"
         echo ""
         ui_title "Esecuzione automatica terminata"
         ui_dim "Log: $TB_LOG"
@@ -440,8 +601,11 @@ mostra_menu() {
     printf '   %sMANUTENZIONE%s\n' "$C_GREEN" "$C_OFF"
     printf '     7)  Manutenzione sistema      %sApri con, disco, Spotlight, aggiornamenti%s\n' "$C_DIM" "$C_OFF"
     printf '     8)  Manutenzione consigliata  %spulizia sicura + DNS%s\n' "$C_DIM" "$C_OFF"
+    printf '     A)  Aggiorna tutto            %smacOS e programmi Homebrew%s\n' "$C_DIM" "$C_OFF"
     echo ""
     printf '   %sALTRO%s\n' "$C_GREEN" "$C_OFF"
+    printf '     D)  Diagnosi guidata          %sInternet, lentezza, disco pieno%s\n' "$C_DIM" "$C_OFF"
+    printf '     V)  Programmi all'"'"'avvio      %sspegni o riattiva%s\n' "$C_DIM" "$C_OFF"
     printf '     B)  Backup di iPhone e iPad  %selenca ed elimina per dispositivo%s\n' "$C_DIM" "$C_OFF"
     printf '     P)  Selezione personalizzata  %sscegli le singole operazioni%s\n' "$C_DIM" "$C_OFF"
     printf '     L)  Apri la cartella dei log\n'
@@ -473,6 +637,11 @@ while true; do
              "La reindicizzazione di Spotlight rende il Mac piu' lento per alcune ore, finche' l'indice non e' ricostruito. L'installazione degli aggiornamenti di macOS puo' richiedere molto tempo e riavviare il Mac."
            ui_pause ;;
         8) esegui_insieme "Manutenzione consigliata" "$(task_set Consigliata)" 0 ""; ui_pause ;;
+        A) esegui_insieme "Aggiorna tutto" "$(task_set Aggiornamenti)" 0 \
+             "Installa gli aggiornamenti di macOS e dei programmi Homebrew. L'elenco viene mostrato prima di ogni passo. Puo' richiedere molto tempo e riavviare il Mac: salva il lavoro aperto."
+           ui_pause ;;
+        D) diagnosi_guidata; ui_pause ;;
+        V) gestione_avvio; ui_pause ;;
         B) gestione_backup_ios; ui_pause ;;
         P) selezione_personalizzata; ui_pause ;;
         L) open "$TB_DIR/logs" 2>/dev/null ;;

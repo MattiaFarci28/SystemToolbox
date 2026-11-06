@@ -382,3 +382,30 @@ ui_summary() {
         ui_ok "Tutte le operazioni completate senza errori."
     fi
 }
+
+# ============================================================
+#   DIAGNOSI GUIDATA
+#   Un controllo per riga: esito, cosa e' stato verificato e,
+#   se qualcosa non va, cosa fare.
+# ============================================================
+# diag_passo <ok|ko|info> <cosa> [<cosa fare>]
+diag_passo() {
+    case "$1" in
+        ok) printf '   %s%s%s %s\n' "$C_GREEN"  "$TB_SYM_OK"   "$C_OFF" "$2" ;;
+        ko) printf '   %s%s%s %s\n' "$C_YELLOW" "$TB_SYM_WARN" "$C_OFF" "$2" ;;
+        *)  printf '   %s-%s   %s\n' "$C_DIM" "$C_OFF" "$2" ;;
+    esac
+    rep_add "- $2"
+    [ -n "$3" ] && ui_wrap "$3" 8 "$C_DIM"
+    log_write "diagnosi: $1 - $2" "INFO"
+    return 0
+}
+
+# diag_conclusione <testo>
+diag_conclusione() {
+    echo ""
+    printf '   %sIn breve%s\n' "$C_WHITE" "$C_OFF"
+    ui_wrap "$1" 3 ""
+    rep_add "**In breve:** $1"
+    return 0
+}

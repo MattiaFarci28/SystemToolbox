@@ -460,6 +460,88 @@ else
 fi
 
 # ------------------------------------------------------------
+titolo "Misura di una cartella con spazi nel nome"
+# du separa dimensione e percorso con una tabulazione: dividendo
+# sugli spazi, "Application Support" non corrispondeva mai e la
+# misura completa usciva 0 (i backup di iPhone non comparivano).
+DIRSP="/tmp/tb_spazio_$$/con spazio"
+mkdir -p "$DIRSP" && head -c 200000 /dev/zero > "$DIRSP/a.bin"
+RIS=$(bytes_of_path_limitato "$DIRSP" 10)
+case "$RIS" in 0\|*) ko "misura a zero con uno spazio nel percorso" ;; *\|0) ok "misura completa corretta: ${RIS%|*} byte" ;; *) ko "misura inattesa: $RIS" ;; esac
+
+# ------------------------------------------------------------
+titolo "Novita' rispetto all'analisi precedente"
+STO="/tmp/tb_novita_$$"; mkdir -p "$STO"
+storico_init "$STO/storico.txt"
+TB_AVVISI_MODO="completa"
+check "chiave senza cifre" "$(avviso_chiave 'Disco pieno al 91%')" "Disco pieno al #%"
+A1=$(printf 'Disco pieno al 91%%\nFirewall spento\n')
+check "prima analisi: nessuna novita'" "$(avvisi_nuovi "$A1")" ""
+avvisi_salva "$A1"
+A2=$(printf 'Disco pieno al 93%%\nBackup vecchio di 12 giorni\n')
+check "un avviso nuovo, il numero cambiato non conta" "$(avvisi_nuovi "$A2")" "Backup vecchio di 12 giorni"
+check "un avviso risolto" "$(avvisi_risolti "$A2")" "1"
+TB_AVVISI_MODO="rapida"
+check "la rapida ha un suo confronto" "$(avvisi_nuovi "$A2")" ""
+TB_AVVISI_MODO="completa"
+
+# ------------------------------------------------------------
+titolo "Storico della salute dei dischi"
+check "prima registrazione: nessun confronto" "$(smart_confronto sda PASSED 10 0)" ""
+F=$(smart_file); VECCHIO=$(( $(date +%s) - 3 * 86400 ))
+sed "s/^[0-9]*/$VECCHIO/" "$F" > "$F.tmp" && mv "$F.tmp" "$F"
+OUT=$(smart_confronto sda PASSED 16 3)
+echo "$OUT" | grep -q '^prima|3$' && ok "giorni dall'ultima registrazione" || ko "giorni non calcolati: $OUT"
+echo "$OUT" | grep -q 'usura salita dal 10% al 16%' && ok "usura in aumento segnalata" || ko "usura non segnalata"
+echo "$OUT" | grep -q '3 nuovi errori' && ok "nuovi errori segnalati" || ko "errori non segnalati"
+OUT=$(smart_confronto sda PASSED 17 3)
+echo "$OUT" | grep -q '^peggio' && ko "segnalato un peggioramento sotto soglia" || ok "nessun avviso per +1% e stessi errori"
+check "disco senza dati di usura" "$(smart_confronto sdb Verified - - | grep -c peggio)" "0"
+
+# ------------------------------------------------------------
+titolo "Cartelle e file piu' grandi"
+H="/tmp/tb_grandi_$$"; mkdir -p "$H/con spazio" "$H/piccola"
+head -c 2000000 /dev/zero > "$H/con spazio/grande.bin"
+head -c 1000 /dev/zero > "$H/piccola/x.txt"
+OUT=$(grandi_cartelle "$H" 10)
+check "misura completa" "$(echo "$OUT" | head -1)" "parziale|0"
+check "prima la cartella piu' grande, nome con spazio intero" "$(echo "$OUT" | sed -n 2p | cut -f2)" "$H/con spazio"
+OUT=$(grandi_file "$H" 10 1)
+check "file oltre la soglia" "$(echo "$OUT" | sed -n 2p | cut -f2)" "$H/con spazio/grande.bin"
+check "file sotto la soglia esclusi" "$(echo "$OUT" | grep -c x.txt)" "0"
+TB_HOME="$H"
+# shellcheck disable=SC2088  # "~/" e' il testo atteso, non un percorso
+check "percorso breve" "$(percorso_breve "$H/con spazio/grande.bin")" "~/con spazio/grande.bin"
+TB_HOME="/tmp/tb_home_finta"
+
+# ------------------------------------------------------------
+titolo "Configurazione: backup e programmi esclusi"
+printf 'app_escluse = Mozilla.Firefox, git\nbackup_avviso_giorni=3\n' > "/tmp/tb_cfgx_$$.conf"
+cfg_load "/tmp/tb_cfgx_$$.conf"
+check "elenco letto" "$CFG_app_escluse" "Mozilla.Firefox, git"
+check "elenco un nome per riga" "$(app_escluse_elenco | tr '\n' ' ')" "Mozilla.Firefox git "
+check "giorni del backup" "$CFG_backup_avviso_giorni" "3"
+printf 'app_escluse=a;touch x\n' > "/tmp/tb_cfgx_$$.conf"
+cfg_load "/tmp/tb_cfgx_$$.conf"
+check "valore con caratteri di comando rifiutato" "$CFG_app_escluse" "Mozilla.Firefox, git"
+CFG_app_escluse=""; CFG_backup_avviso_giorni=7
+
+# ------------------------------------------------------------
+titolo "Diagnosi guidata"
+. lib/analysis.sh 2>/dev/null
+for fn in diagnosi_rete diagnosi_lento diagnosi_disco show_backup show_grandi show_novita smart_mostra_andamento; do
+    type "$fn" >/dev/null 2>&1 && ok "$fn definita" || ko "$fn mancante"
+done
+check "passo riuscito" "$(diag_passo ok 'Rete' | grep -c 'Rete')" "1"
+check "il consiglio va a capo sotto" "$(diag_passo ko 'Rete' 'Riavvia il router' | grep -c 'Riavvia il router')" "1"
+grep -q 'D) diagnosi_guidata' toolbox.sh && ok "voce D nel menu" || ko "voce D assente dal menu"
+
+# ------------------------------------------------------------
+titolo "Diagnosi nell'interfaccia grafica (Linux)"
+grep -q 'diagnosi)    gui_diagnosi' toolbox-gui.sh && ok "voce Diagnosi nel menu grafico" || ko "Diagnosi assente dal menu grafico"
+grep -q 'smartctl -H -A' lib/analysis.sh && ok "SMART legge anche usura ed errori" || ko "SMART legge solo lo stato"
+
+# ------------------------------------------------------------
 titolo "Conversione da forma leggibile a byte"
 # Serve per i comandi che rispondono gia' in "1.1G": rimisurarli
 # con du sarebbe assurdo, ma il numero va convertito a mano

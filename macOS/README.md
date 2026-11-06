@@ -54,6 +54,9 @@ Se sposti la cartella, rilancia il comando.
 | 6 | Reset configurazione di rete (**richiede riavvio**) |
 | 7 | Manutenzione sistema |
 | 8 | Manutenzione consigliata (3 + DNS) |
+| A | Aggiorna tutto: macOS e programmi Homebrew |
+| D | Diagnosi guidata |
+| V | Programmi all'avvio |
 | B | Backup di iPhone e iPad |
 | P | Selezione personalizzata |
 | L | Apri la cartella dei log |
@@ -97,6 +100,7 @@ Se sposti la cartella, rilancia il comando.
 | sicuro | Verifica il volume di avvio | 3 min | solo controllo |
 | avanzato | Reindicizza Spotlight | 1 min | il Mac rallenta per alcune ore |
 | avanzato | Installa gli aggiornamenti di macOS | 20 min | può riavviare |
+| avanzato | Aggiorna i programmi di Homebrew | 10 min | quelli in `app_escluse` restano fermi |
 | SCONSIG. | Libera la memoria (purge) | 20 s | **peggiora** le prestazioni |
 
 ### Insiemi predefiniti
@@ -108,6 +112,7 @@ Se sposti la cartella, rilancia il comando.
 | Pulizia avanzata | le 7 voci `[avanzato]`, Docker escluso | ~8 min |
 | Manutenzione rete | DNS + rinnovo IP | ~35 s |
 | Manutenzione sistema | "Apri con", verifica disco, Spotlight, aggiornamenti | 15–35 min |
+| Aggiorna tutto | aggiornamenti di macOS + Homebrew | 30 min circa |
 
 Docker e purge si scelgono solo dalla selezione personalizzata (`P`).
 
@@ -115,6 +120,17 @@ Docker e purge si scelgono solo dalla selezione personalizzata (`P`).
 
 Elenca i backup con nome del dispositivo, data e dimensione, e cancella solo quelli che scegli.
 **La cancellazione è definitiva**: non passa dal Cestino.
+
+### Programmi all'avvio (tasto V)
+
+Elenca agenti e servizi di terze parti che partono con il Mac e li spegne o riattiva con
+`launchctl disable` / `enable`. Il file non viene cancellato: si riattiva in qualsiasi momento.
+L'effetto vale dal prossimo accesso o riavvio.
+
+### Diagnosi guidata (tasto D)
+
+Parti dal problema, "Internet non va", "il Mac è lento" o "il disco è pieno": la diagnosi
+controlla solo ciò che lo spiega, un passo alla volta, e propone l'operazione utile se c'è.
 
 ## Cosa controlla l'analisi
 
@@ -127,9 +143,14 @@ Elenca i backup con nome del dispositivo, data e dimensione, e cancella solo que
 | Temperatura, avvio automatico, snapshot di Time Machine | | ✓ |
 | Spotlight, connettività, aggiornamenti di macOS | | ✓ |
 | Spazio recuperabile: backup iOS, Xcode, cache, Download | | ✓ |
+| Backup: Time Machine e data dell'ultimo backup | | ✓ |
+| Cartelle e file più grandi della cartella personale | | ✓ |
 
 Su un Mac contano soprattutto due cose: lo **swap in uso** (oltre 1 GB il Mac sta usando il disco
 come memoria) e il **tipo di disco** (un disco meccanico rallenta più di qualsiasi altra cosa).
+
+Alla fine, **Novità dall'ultima analisi** mostra cosa è comparso o sparito rispetto alla volta prima,
+e lo stato SMART del disco viene confrontato con le analisi precedenti.
 
 ## Configurazione
 
@@ -151,6 +172,8 @@ Copia `toolbox.conf.esempio` in `toolbox.conf`.
 | `conferme_grafiche` | no | `si` chiede conferma con una finestra |
 | `notifica_fine` | si | notifica quando finisce |
 | `ridimensiona_terminale` | no | `si` ridimensiona la finestra all'avvio |
+| `backup_avviso_giorni` | 7 | giorni oltre cui un backup è considerato vecchio |
+| `app_escluse` | (vuoto) | programmi di Homebrew da non aggiornare |
 
 Non usate su macOS: `ram_critica` (conta lo swap), `avanzamento` (esiste solo su Linux), `lingua`.
 
@@ -161,6 +184,8 @@ Non usate su macOS: `ram_critica` (conta lo swap), `avanzamento` (esiste solo su
 - Le cartelle protette da SIP non si possono cancellare: vengono saltate e segnalate.
 - Su APFS lo spazio liberato può comparire più tardi, quando scadono gli snapshot.
 - Se macOS blocca il file perché "scaricato da Internet": clic destro, **Apri**.
+- In modalità automatica la notifica compare solo se ci sono problemi **nuovi** rispetto all'esecuzione precedente.
+- Per leggere la data dell'ultimo backup di Time Machine può servire collegare il disco di backup.
 
 ## Collaudo
 
@@ -168,7 +193,7 @@ Non usate su macOS: `ram_critica` (conta lo swap), `avanzamento` (esiste solo su
 bash test/collaudo.sh
 ```
 
-104 controlli, non toccano il sistema.
+142 controlli, non toccano il sistema.
 Lo strumento è stato provato anche su un Mac reale.
 
 ## File
