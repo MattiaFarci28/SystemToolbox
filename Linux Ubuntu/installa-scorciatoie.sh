@@ -176,6 +176,7 @@ ok "Completamento bash: $FILE_COMP"
 # distribuzioni: si aggiunge la riga a ~/.bashrc, una volta sola.
 RIGA="[ -f \"$FILE_COMP\" ] && . \"$FILE_COMP\"   # System Toolbox"
 if [ -f "$HOME/.bashrc" ] && grep -Fq "System Toolbox" "$HOME/.bashrc"; then
+    # shellcheck disable=SC2088  # testo a schermo, non un percorso
     ok "~/.bashrc gia' predisposto"
 else
     printf '\n%s\n' "$RIGA" >> "$HOME/.bashrc"

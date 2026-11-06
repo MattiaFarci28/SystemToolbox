@@ -1,0 +1,5 @@
+# Le librerie in lib/ si caricano a vicenda: ShellCheck le analizza
+# una per volta e segnala come "mai usate" le variabili condivise
+# (SC2034) e come "mai assegnate" quelle definite in un altro file
+# (SC2154). Sono falsi allarmi strutturali, non errori.
+disable=SC2034,SC2154

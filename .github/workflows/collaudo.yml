@@ -1,0 +1,61 @@
+# Collaudo automatico sui tre sistemi veri, a ogni modifica.
+# Le suite non toccano il sistema: lavorano su cartelle di prova.
+name: Collaudo
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  windows:
+    name: Windows
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Suite di collaudo (Windows PowerShell 5.1)
+        shell: powershell
+        run: |
+          & .\Windows\test\Collaudo.ps1
+          exit $LASTEXITCODE
+
+      - name: PSScriptAnalyzer
+        shell: pwsh
+        run: |
+          if (-not (Get-Module -ListAvailable PSScriptAnalyzer)) {
+            Install-Module PSScriptAnalyzer -Scope CurrentUser -Force
+          }
+          $r = Invoke-ScriptAnalyzer -Path Windows -Recurse -Severity Error, Warning `
+                 -Settings Windows/PSScriptAnalyzerSettings.psd1
+          $r | Format-Table ScriptName, Line, RuleName, Message -AutoSize -Wrap
+          if ($r) { exit 1 }
+
+  macos:
+    name: macOS
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # /bin/bash e' la 3.2 che Apple installa: e' la versione che
+      # il progetto deve supportare, non quella di Homebrew.
+      - name: Suite di collaudo (bash 3.2)
+        working-directory: macOS
+        run: /bin/bash test/collaudo.sh
+
+  linux:
+    name: Linux
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Suite di collaudo
+        working-directory: Linux Ubuntu
+        run: bash test/collaudo.sh
+
+      - name: ShellCheck
+        run: git ls-files -z '*.sh' '*.command' | xargs -0 shellcheck -S warning

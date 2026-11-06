@@ -549,7 +549,8 @@ FINEELENCO
     CTX_ITEMS=$(( CTX_ITEMS + rimossi ))
     CTX_SKIPPED=$(( CTX_SKIPPED + bloccati ))
 
-    local msg="$etichetta: $(format_bytes "$liberati") liberati, $rimossi elementi rimossi"
+    local msg
+    msg="$etichetta: $(format_bytes "$liberati") liberati, $rimossi elementi rimossi"
     [ "$bloccati" -gt 0 ] && msg="$msg, $bloccati in uso o protetti (saltati)"
     ctx_note "$msg"
 }

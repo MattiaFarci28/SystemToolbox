@@ -403,6 +403,7 @@ titolo "Colori e simboli reimpostati dopo la configurazione"
 # che toolbox.conf sia letto. Se il punto d'avvio non li reimposta
 # dopo, la configurazione non ha effetto: su macOS simboli=emoji
 # veniva ignorato proprio per questo.
+# shellcheck disable=SC2043  # un solo punto d'avvio su macOS, due su Linux
 for f in toolbox.command; do
     prima=$(grep -n '^cfg_load ' "$f" | head -1 | cut -d: -f1)
     for fn in ui_colori_init ui_simboli_init; do

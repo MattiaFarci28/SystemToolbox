@@ -51,7 +51,7 @@ $modGui = @([regex]::Matches($srcGui, "Join-Path .radice 'lib.([A-Za-z]+\.ps1)'"
 
 if ($modToolbox.Count -eq 0) { Ko 'elenco moduli di Toolbox.ps1 non riconosciuto' }
 elseif ($modGui.Count -eq 0) { Ko 'elenco moduli del worker GUI non riconosciuto' }
-elseif ((Compare-Object $modToolbox $modGui) -eq $null) {
+elseif ($null -eq (Compare-Object $modToolbox $modGui)) {
     Ok ("GUI e menu caricano gli stessi $($modGui.Count) moduli")
 } else {
     Ko ("elenchi diversi - Toolbox: $($modToolbox -join ',')  GUI: $($modGui -join ',')")

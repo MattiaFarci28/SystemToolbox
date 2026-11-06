@@ -450,7 +450,8 @@ task_net_reset() {
         CTX_REBOOT=1
         return 0
     fi
-    local backup="$dir/backup-toolbox-$(date '+%Y%m%d-%H%M%S')"
+    local backup
+    backup="$dir/backup-toolbox-$(date '+%Y%m%d-%H%M%S')"
     as_root mkdir -p "$backup" 2>/dev/null
     local f
     for f in com.apple.airport.preferences.plist NetworkInterfaces.plist preferences.plist com.apple.network.identification.plist; do

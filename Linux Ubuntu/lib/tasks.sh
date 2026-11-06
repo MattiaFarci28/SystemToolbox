@@ -355,7 +355,9 @@ task_clean_kernels() {
         return 0
     fi
     local prima; prima=$(free_space_bytes)
-    # shellcheck disable=SC2086
+    # I nomi dei pacchetti non contengono spazi: la divisione in parole
+    # e' voluta, serve a passarli come argomenti separati.
+    # shellcheck disable=SC2046
     as_root env LC_ALL=C apt-get purge -y $(echo "$da_rimuovere" | tr '\n' ' ') >/dev/null 2>&1 || \
         ctx_fail "La rimozione di uno o piu' kernel non e' riuscita"
     local lib=$(( $(free_space_bytes) - prima )); [ "$lib" -lt 0 ] && lib=0
@@ -649,7 +651,8 @@ task_maint_pam_lastlog() {
         ctx_note "La riga pam_lastlog verrebbe rimossa da $file (simulazione)"
         return 0
     fi
-    local backup="${file}.toolbox-$(date '+%Y%m%d-%H%M%S')"
+    local backup
+    backup="${file}.toolbox-$(date '+%Y%m%d-%H%M%S')"
     as_root cp "$file" "$backup" 2>/dev/null || { ctx_fail "Copia di sicurezza non riuscita: non procedo"; return 0; }
     as_root sed -i '/pam_lastlog/d' "$file" 2>/dev/null
     CTX_ITEMS=$((CTX_ITEMS + 1))

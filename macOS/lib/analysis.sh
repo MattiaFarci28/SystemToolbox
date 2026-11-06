@@ -299,6 +299,9 @@ show_startup() {
     for d in $dirs; do
         [ -d "$d" ] || continue
         local n
+        # I nomi degli agenti sono identificativi a dominio inverso,
+        # senza a capo: ls | grep qui e' affidabile.
+        # shellcheck disable=SC2010
         n=$(ls -1 "$d"/*.plist 2>/dev/null | grep -v -c '/com\.apple\.' 2>/dev/null)
         [ -z "$n" ] && n=0
         totale=$((totale + n))
@@ -310,6 +313,7 @@ show_startup() {
         ui_kv "Elementi di terze parti" "$totale"
         for d in $dirs; do
             [ -d "$d" ] || continue
+            # shellcheck disable=SC2010
             ls -1 "$d"/*.plist 2>/dev/null | grep -v '/com\.apple\.' | head -8 | while IFS= read -r f; do
                 nome=$(basename "$f" .plist)
                 printf '   %-46.46s %s%s%s\n' "$nome" "$C_DIM" "$(dirname "$f")" "$C_OFF"
@@ -355,10 +359,12 @@ show_spotlight() {
         return
     fi
     case "$stato" in
-        *enabled*|*abilitat*) ui_kvc "Indicizzazione" "$C_GREEN" "attiva" ;;
+        # "disabilitato" contiene "abilitat": il caso spento va controllato
+        # per primo, altrimenti verrebbe mostrato come attivo.
         *disabled*|*disabilitat*)
             ui_kvc "Indicizzazione" "$C_YELLOW" "disattivata"
             ui_dim "La ricerca non trovera' i file finche' non viene riattivata." ;;
+        *enabled*|*abilitat*) ui_kvc "Indicizzazione" "$C_GREEN" "attiva" ;;
         *) ui_kv "Indicizzazione" "$stato" ;;
     esac
 }

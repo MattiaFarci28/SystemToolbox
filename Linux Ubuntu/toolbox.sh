@@ -32,6 +32,7 @@ for modulo in common.sh core.sh ui.sh analysis.sh tasks.sh; do
         echo ""
         exit 1
     fi
+    # shellcheck source=/dev/null
     . "$TB_DIR/lib/$modulo"
 done
 

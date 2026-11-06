@@ -241,7 +241,7 @@ function Measure-FolderBytesLimitato {
         } catch { }
         $cond['Fatto'] = $true
     })
-    $h = $ps.BeginInvoke()
+    $null = $ps.BeginInvoke()
 
     $sw = [Diagnostics.Stopwatch]::StartNew()
     while (-not $condiviso['Fatto'] -and $sw.Elapsed.TotalSeconds -lt $SecondiMax) {

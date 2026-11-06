@@ -821,7 +821,7 @@ function Get-SysEventError {
 function Get-BatteryFromReport {
     $file = Join-Path $env:TEMP ('battreport_{0}.html' -f [guid]::NewGuid().ToString('N').Substring(0,8))
     try {
-        $r = Invoke-Native -File 'powercfg.exe' -Arguments @('/batteryreport','/output', ('"' + $file + '"')) -TimeoutSec 45
+        $null = Invoke-Native -File 'powercfg.exe' -Arguments @('/batteryreport','/output', ('"' + $file + '"')) -TimeoutSec 45
         if (-not (Test-Path -LiteralPath $file -ErrorAction SilentlyContinue)) { return $null }
         $html = Get-Content -LiteralPath $file -Raw -ErrorAction SilentlyContinue
     } catch {
@@ -928,7 +928,7 @@ function Get-SysNetwork {
         $sw = [System.Diagnostics.Stopwatch]::StartNew()
         try {
             $r = Resolve-DnsName -Name 'www.microsoft.com' -Type A -DnsOnly -ErrorAction Stop
-            $dnsOk = ($r -ne $null)
+            $dnsOk = ($null -ne $r)
         } catch { $dnsOk = $false }
         $sw.Stop()
         $dnsMs = [int]$sw.Elapsed.TotalMilliseconds
