@@ -98,10 +98,12 @@ jobs:
 
       - uses: actions/checkout@v5
 
+      # Niente "working-directory" qui: dentro un container GitHub passa
+      # la cartella a Docker senza virgolette, e lo spazio di
+      # "Linux Ubuntu" la spezza ("No such container: Ubuntu").
+      # Si entra nella cartella dentro il comando, tra virgolette.
       - name: Suite di collaudo
-        working-directory: Linux Ubuntu
-        run: bash test/collaudo.sh
+        run: cd "Linux Ubuntu" && bash test/collaudo.sh
 
       - name: Gestore pacchetti vero
-        working-directory: Linux Ubuntu
-        run: bash test/distro.sh ${{ matrix.gestore }}
+        run: cd "Linux Ubuntu" && bash test/distro.sh ${{ matrix.gestore }}
