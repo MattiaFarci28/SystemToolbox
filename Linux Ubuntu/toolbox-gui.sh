@@ -275,6 +275,14 @@ oppure usa il menu testuale (./toolbox.sh)."
             run_task "$id" >> "$out" 2>&1
             printf '%s|%s|%s|%s|%s\n' \
                 "$RES_ESITO" "$nome2" "$RES_BYTES" "$RES_DURATA" "$RES_ERRORS" >> "$esiti"
+            # Codice di uscita salvato dopo OGNI operazione. Se l'utente
+            # chiude la finestra di avanzamento con la X, zenity esce e
+            # questa sottoshell si ferma al prossimo "echo" verso di lei:
+            # cioe' DOPO l'operazione in corso, mai a meta' (l'output
+            # delle operazioni va nel file, non nella finestra). Le
+            # operazioni rimanenti vengono saltate, come con Interrompi,
+            # e il riepilogo mostra quelle eseguite con il loro esito.
+            echo "$TB_EXIT" > "$TB_TMP/esito_codice"
         done
         echo "$TB_EXIT" > "$TB_TMP/esito_codice"
         echo "100"
@@ -394,7 +402,7 @@ gui_menu() {
         if [ "$TB_DRYRUN" -eq 1 ]; then stato_sim="ATTIVA"; else stato_sim="disattivata"; fi
 
         scelta=$(zenity --list --radiolist --title="$TITOLO $TB_VERSIONE" \
-            --text="<b>$TB_SISTEMA</b>\nGestore pacchetti: $TB_PKG_NOME    Simulazione: <b>$stato_sim</b>" \
+            --text="<b>$(html_escape "$TB_SISTEMA")</b>\nGestore pacchetti: $TB_PKG_NOME    Simulazione: <b>$stato_sim</b>" \
             --column="" --column="azione" --column="Cosa fa" \
             --hide-column=2 --print-column=2 \
             --width=680 --height=420 \

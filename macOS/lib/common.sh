@@ -379,9 +379,14 @@ rep_add() {
 # Trasforma i caratteri speciali per l'HTML senza processi esterni.
 html_escape() {
     local s="$1"
-    s=${s//&/&amp;}
-    s=${s//</&lt;}
-    s=${s//>/&gt;}
+    # Il testo sostitutivo va tra virgolette. Da bash 5.2 l'opzione
+    # patsub_replacement, attiva di default, fa valere "&" come "il
+    # testo trovato": senza virgolette "<" diventerebbe "<lt;" e il
+    # codice HTML passerebbe intatto. Il manuale di bash: le
+    # virgolette disattivano questa sostituzione.
+    s=${s//&/"&amp;"}
+    s=${s//</"&lt;"}
+    s=${s//>/"&gt;"}
     printf '%s' "$s"
 }
 
@@ -472,12 +477,32 @@ TB_JSON=0
 TB_JSON_AVVISI=""
 TB_JSON_OPS=""
 
+# Rende un testo sicuro dentro le virgolette di una stringa JSON.
+# Lo standard JSON vieta i caratteri di controllo (codici 0-31) in una
+# stringa: tabulatore, "a capo" e ritorno carrello diventano \t \n \r,
+# gli altri si tolgono. Senza, un nome di file o di dispositivo con un
+# "a capo" renderebbe illeggibile tutto il JSON.
 json_escape() {
     local s="$1"
     s=${s//\\/\\\\}
     s=${s//\"/\\\"}
     s=${s//	/\\t}
+    s=${s//$'\n'/\\n}
+    s=${s//$'\r'/\\r}
+    s=${s//[$'\001'-$'\037']/}
     printf '%s' "$s"
+}
+
+# Un numero intero per il JSON: un campo vuoto o non numerico
+# renderebbe il JSON non valido, quindi in quel caso si scrive 0.
+# 10# toglie gli zeri iniziali ("007" non e' un numero JSON valido);
+# oltre 18 cifre non e' un valore che lo strumento produca.
+json_numero() {
+    case "$1" in
+        ''|-|*[!0-9-]*|?*-*|???????????????????*) printf '0' ;;
+        -*) printf '%s' "$(( -10#${1#-} ))" ;;
+        *)  printf '%s' "$(( 10#$1 ))" ;;
+    esac
 }
 
 json_op_add() {
@@ -485,7 +510,7 @@ json_op_add() {
     local sep=""
     [ -n "$TB_JSON_OPS" ] && sep=","
     TB_JSON_OPS="${TB_JSON_OPS}${sep}
-    {\"id\":\"$(json_escape "$1")\",\"nome\":\"$(json_escape "$2")\",\"esito\":\"$3\",\"byte_liberati\":$4,\"durata_s\":$5,\"errori\":$6}"
+    {\"id\":\"$(json_escape "$1")\",\"nome\":\"$(json_escape "$2")\",\"esito\":\"$(json_escape "$3")\",\"byte_liberati\":$(json_numero "$4"),\"durata_s\":$(json_numero "$5"),\"errori\":$(json_numero "$6")}"
 }
 
 json_avviso_add() {
@@ -497,12 +522,12 @@ json_avviso_add() {
 json_write() {
     [ "$TB_JSON" -eq 1 ] || return 0
     printf '{\n'
-    printf '  "versione_strumento": "%s",\n' "$TB_VERSIONE"
+    printf '  "versione_strumento": "%s",\n' "$(json_escape "$TB_VERSIONE")"
     printf '  "data": "%s",\n' "$(date '+%Y-%m-%dT%H:%M:%S')"
     printf '  "sistema": "%s",\n' "$(json_escape "$TB_SISTEMA")"
     printf '  "simulazione": %s,\n' "$( [ "$TB_DRYRUN" -eq 1 ] && echo true || echo false )"
-    printf '  "esito": %s,\n' "$TB_EXIT"
-    printf '  "spazio_libero_byte": %s,\n' "$(free_space_bytes)"
+    printf '  "esito": %s,\n' "$(json_numero "$TB_EXIT")"
+    printf '  "spazio_libero_byte": %s,\n' "$(json_numero "$(free_space_bytes)")"
     printf '  "avvisi": [%s],\n' "$TB_JSON_AVVISI"
     printf '  "operazioni": [%s\n  ]\n' "$TB_JSON_OPS"
     printf '}\n'

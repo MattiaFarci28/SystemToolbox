@@ -205,7 +205,7 @@ Non usate su Linux: `avvii_avviso` (conta il tempo di avvio), `app_escluse` (i p
 bash test/collaudo.sh
 ```
 
-170 controlli, non toccano il sistema.
+175 controlli, non toccano il sistema.
 Lo strumento è stato provato anche su un PC Ubuntu reale. DNF, pacman e zypper non sono ancora stati provati.
 
 ## File

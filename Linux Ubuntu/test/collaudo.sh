@@ -154,7 +154,11 @@ check "simulazione non cancella" "$RIMASTI" "5"
 [ "$CTX_BYTES" -gt 0 ] && ok "simulazione conta i byte ($(format_bytes $CTX_BYTES))" || ko "simulazione non conta i byte"
 
 ctx_reset; TB_DRYRUN=0
-clear_folder_content "$SB" "prova" >/dev/null 2>&1
+# Nessun messaggio di errore: un errore qui vuol dire codice rotto
+# (per esempio righe rimaste fuori posto, eseguite come comandi).
+clear_folder_content "$SB" "prova" >/dev/null 2>"$SB.err"
+check "cancellazione senza messaggi di errore" "$(cat "$SB.err")" ""
+rm -f "$SB.err"
 RIMASTI=$( ( shopt -s dotglob nullglob; set -- "$SB"/*; echo $# ) )
 check "cancellazione completa (file nascosto compreso)" "$RIMASTI" "0"
 check "elementi contati" "$CTX_ITEMS" "5"
@@ -201,6 +205,13 @@ rm -f "$TB_REPORT"
 TB_REPORT="/tmp/tb_report_$$.html"
 report_write
 grep -q '<h2>SEZIONE DI PROVA</h2>' "$TB_REPORT" && ok "report HTML generato" || ko "report HTML incompleto"
+# Un nome con codice HTML (per esempio un dispositivo chiamato cosi')
+# deve comparire come testo, mai come codice.
+ui_warn "Disco <script>alert(1)</script> & co" >/dev/null
+report_write
+if grep -q '&lt;script&gt;' "$TB_REPORT" && ! grep -q '<script>' "$TB_REPORT"; then
+    ok "report HTML: il codice nei nomi diventa testo"
+else ko "report HTML: codice inserito nella pagina"; fi
 rm -f "$TB_REPORT"; TB_REPORT=""
 
 TB_JSON=1; TB_JSON_OPS=""; TB_JSON_AVVISI=""
@@ -209,6 +220,17 @@ json_avviso_add "un avviso"
 OUT=$(json_write)
 echo "$OUT" | grep -q '"versione_strumento"' && ok "JSON con versione" || ko "JSON senza versione"
 echo "$OUT" | grep -q '\\"virgolette\\"' && ok "JSON con virgolette protette" || ko "JSON non protegge le virgolette"
+# Caratteri di controllo e numeri sbagliati non devono rompere il JSON.
+TB_JSON_OPS=""; TB_JSON_AVVISI=""
+json_avviso_add "$(printf 'disco\ncon a capo\001 e <tag> & "virgolette"')"
+json_op_add "prova" "nome" "OK" "" "007" "x"
+OUT=$(json_write)
+case "$OUT" in *'disco\ncon a capo e <tag>'*) ok "JSON: a capo protetto e controlli tolti" ;; *) ko "JSON: a capo o caratteri di controllo non gestiti" ;; esac
+case "$OUT" in *'"byte_liberati":0,"durata_s":7,"errori":0'*) ok "JSON: numeri vuoti o errati diventano validi" ;; *) ko "JSON: numeri non validi nell'output" ;; esac
+if command -v python3 >/dev/null 2>&1; then
+    printf '%s' "$OUT" | python3 -c 'import json,sys; json.load(sys.stdin)' 2>/dev/null \
+        && ok "JSON: valido per un lettore standard (python3)" || ko "JSON: non valido per python3"
+fi
 TB_JSON=0
 
 # ------------------------------------------------------------

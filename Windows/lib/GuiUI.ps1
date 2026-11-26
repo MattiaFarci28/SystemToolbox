@@ -943,7 +943,10 @@ function Start-LavoroGui {
     $s.BtnAnalisiRapida.IsEnabled = $false
     $s.BtnPulisciOut.IsEnabled    = $false
     $s.BtnDiagnosi.IsEnabled      = $false
-    $s.BtnInterrompi.IsEnabled    = $true
+    # Interrompi agisce fra un'operazione e l'altra: ha senso solo
+    # quando si eseguono operazioni. Durante analisi e diagnosi, che
+    # non modificano nulla, resterebbe un pulsante che non fa niente.
+    $s.BtnInterrompi.IsEnabled    = ($Modo -eq 'task')
 
     $s.StimeCoda = @()
     if ($Modo -eq 'task') {
@@ -1018,6 +1021,13 @@ function Complete-LavoroGui {
             Write-Log 'Riavvio rimandato dall utente (GUI)' 'INFO'
         }
     }
+
+    # La finestra era stata chiusa durante il lavoro: ora che e' finito
+    # (e dopo l'eventuale domanda sul riavvio) si chiude davvero.
+    if ($s.ChiudiAlTermine) {
+        $s.ChiudiAlTermine = $false
+        $s.Finestra.Close()
+    }
 }
 
 # ============================================================
@@ -1056,6 +1066,7 @@ function Start-Gui {
     $s.InCorso         = $false
     $s.Finito          = $false
     $s.RebootRichiesto = $false
+    $s.ChiudiAlTermine = $false   # chiusura chiesta durante un lavoro
     $s.Paragrafo       = $null
     $s.Radice          = $Radice
     $s.LogPath         = $LogPath
@@ -1260,13 +1271,27 @@ function Start-Gui {
     $finestra.Add_Closing({
         param($mittente, $evento)
         $s2 = $script:Sync
+        # Chiusura durante un lavoro: non si interrompe a meta'. Prima
+        # si chiamava Ps.Stop(), che aspetta la fine del comando in
+        # corso: con DISM, SFC o un aggiornamento la finestra restava
+        # bloccata ("Non risponde") anche per molti minuti, e
+        # l'operazione veniva troncata. Ora la finestra resta aperta,
+        # si ferma dopo l'operazione in corso e poi si chiude da sola.
         if ($s2.InCorso) {
+            $evento.Cancel = $true
+            if ($s2.ChiudiAlTermine) { return }   # chiusura gia' richiesta
             $r = [System.Windows.MessageBox]::Show($s2.Finestra,
-                 'Un''operazione e'' ancora in corso. Chiudere comunque?', 'Operazione in corso',
+                 ('Un''operazione e'' ancora in corso e non va interrotta a meta''.' + [Environment]::NewLine + [Environment]::NewLine +
+                  'Chiudere la finestra appena finisce? Le operazioni successive non verranno eseguite.'),
+                 'Operazione in corso',
                  [System.Windows.MessageBoxButton]::YesNo, [System.Windows.MessageBoxImage]::Warning)
-            if ($r -ne [System.Windows.MessageBoxResult]::Yes) { $evento.Cancel = $true; return }
-            $s2.Annulla = $true
-            try { if ($s2.Ps) { $s2.Ps.Stop() } } catch { }
+            if ($r -eq [System.Windows.MessageBoxResult]::Yes) {
+                $s2.Annulla = $true
+                $s2.ChiudiAlTermine = $true
+                $s2.BtnInterrompi.IsEnabled = $false
+                Set-StatoGui 'La finestra si chiudera'' al termine dell''operazione in corso...'
+            }
+            return
         }
         try { $s2.Timer.Stop() } catch { }
         Export-StatoGui

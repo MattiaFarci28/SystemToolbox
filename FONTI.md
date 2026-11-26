@@ -52,6 +52,9 @@ Qui c'è, per ogni comando, la pagina su cui è stato controllato.
 | `smartctl -H -A` | salute del disco | ✓ | [smartctl(8)](https://manpages.ubuntu.com/manpages/noble/en/man8/smartctl.8.html) |
 | `needrestart -b` | servizi da riavviare | ✓ | [needrestart(1)](https://manpages.ubuntu.com/manpages/noble/en/man1/needrestart.1.html) |
 | `shutdown -r` | riavvio | ✓ | [shutdown(8)](https://manpages.ubuntu.com/manpages/noble/en/man8/shutdown.8.html) |
+| `timeout` | tempo massimo per timeshift e la ricerca dei file grandi | ✓ | [timeout(1)](https://manpages.debian.org/bookworm/coreutils/timeout.1.en.html) |
+| `crontab` | esecuzione automatica | ✓ | [crontab(5)](https://manpages.debian.org/bookworm/cron/crontab.5.en.html) |
+| bash: `${var//cerca/sostituisci}` con `&` | protezione dei report HTML | ✎ | [bash(1), patsub_replacement](https://manpages.debian.org/bookworm/bash/bash.1.en.html) |
 | `systemctl`, `systemd-analyze`, `ip`, `ufw`, `sensors`, `timeshift`, `gsettings`, `zenity`, `lsblk`, `findmnt` | analisi (sola lettura) e finestre | … | |
 
 ## macOS
@@ -69,6 +72,9 @@ l'unica fonte ufficiale è il manuale presente sul Mac (`man nome-comando`).
 | `docker system prune -f` | spazio di Docker | ✎ | [docker system prune](https://docs.docker.com/reference/cli/docker/system/prune/) |
 | `killall -HUP mDNSResponder` | svuota la cache DNS | ⚠ | il [manuale di mDNSResponder](https://github.com/apple-oss-distributions/mDNSResponder/blob/main/mDNSShared/mDNSResponder.8) non descrive il segnale HUP |
 | `lsregister` | ricostruisce il database "Apri con" | ⚠ | strumento interno di macOS, senza manuale |
+| `df` su APFS | percentuale del disco: occupato = totale − libero | ✎ | [Condivisione dello spazio fra volumi APFS](https://support.apple.com/guide/mac-help/mac-shares-space-apfs-volumes-sysp560a2952/mac) |
+| `nslookup -timeout -retry` | prova del DNS con tempo massimo | ✓ | [nslookup(1), BIND](https://manpages.debian.org/bookworm/bind9-dnsutils/nslookup.1.en.html); da confermare sul manuale del Mac |
+| `launchd`, `StartCalendarInterval` | esecuzione automatica | ✓ | [Scheduling Timed Jobs](https://developer.apple.com/library/archive/documentation/MacOSX/Conceptual/BPSystemStartup/Chapters/ScheduledJobs.html) |
 | `tmutil`, `diskutil`, `mdutil`, `atsutil`, `qlmanage`, `dscacheutil`, `launchctl`, `purge`, `pmset`, `defaults`, `sips`, `iconutil`, `fdesetup`, `spctl`, `csrutil`, `system_profiler`, `sw_vers`, `xcrun simctl` | vari | … | manuale sul Mac |
 
 ## Windows
@@ -93,4 +99,6 @@ l'unica fonte ufficiale è il manuale presente sul Mac (`man nome-comando`).
 | codici di uscita di winget | per esempio `0x8A15002B` | ✎ | [WinGet HRESULT codes](https://github.com/microsoft/winget-cli/blob/master/doc/windows/package-manager/winget/returnCodes.md) |
 | Windows Update Agent (`IUpdateSearcher`) | aggiornamenti di Windows | ✓ | [IUpdateSearcher::Search](https://learn.microsoft.com/windows/win32/api/wuapi/nf-wuapi-iupdatesearcher-search), [OperationResultCode](https://learn.microsoft.com/windows/win32/api/wuapi/ne-wuapi-operationresultcode) |
 | chiavi `StartupApproved` | programmi all'avvio | ⚠ | è il formato che scrive Gestione attività, ma Microsoft non lo documenta |
+| `PowerShell.BeginStop()` | tempo massimo della ricerca degli aggiornamenti | ✎ | [PowerShell.Stop](https://learn.microsoft.com/dotnet/api/system.management.automation.powershell.stop), [PowerShell.BeginStop](https://learn.microsoft.com/dotnet/api/system.management.automation.powershell.beginstop) |
+| `schtasks /create` | esecuzione automatica | ✓ | [schtasks create](https://learn.microsoft.com/windows-server/administration/windows-commands/schtasks-create) |
 | `Get-NetIPAddress`, `Get-PhysicalDisk`, `Get-CimInstance`, `powercfg /batteryreport`, chiavi del riavvio in sospeso | analisi (sola lettura) | … | |

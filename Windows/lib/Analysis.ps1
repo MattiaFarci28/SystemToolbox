@@ -445,9 +445,20 @@ function Get-SysUpdate {
         }
         $fatto = [bool]$script:UpdCond['Fatto']
         $ris   = $script:UpdCond['Ris']
-        if (-not $fatto) { try { $script:UpdPs.Stop() } catch { } }
-        try { $script:UpdPs.Dispose() } catch { }
-        try { $script:UpdRs.Close(); $script:UpdRs.Dispose() } catch { }
+        if ($fatto) {
+            try { $script:UpdPs.Dispose() } catch { }
+            try { $script:UpdRs.Close(); $script:UpdRs.Dispose() } catch { }
+        } else {
+            # Tempo scaduto. Stop() aspetterebbe la fine del comando
+            # (documentazione Microsoft: "synchronously"), ma la ricerca
+            # e' dentro una chiamata a Windows Update che non si puo'
+            # interrompere: l'analisi resterebbe bloccata proprio qui.
+            # BeginStop() chiede l'arresto senza aspettare; il runspace
+            # non si chiude, perche' anche chiuderlo vorrebbe dire
+            # attendere. Si spegne da solo quando la ricerca finisce,
+            # o all'uscita dello strumento.
+            try { [void]$script:UpdPs.BeginStop($null, $null) } catch { }
+        }
         $script:UpdCond = $null; $script:UpdPs = $null; $script:UpdRs = $null
         if ($fatto -and $ris) { return $ris }
         return [pscustomobject]@{ Ok=$false; Conteggio=0; Titoli=@()

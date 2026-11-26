@@ -150,10 +150,18 @@ show_system() {
 show_disk() {
     ui_section "DISCO"
     local tot usa lib pct
+    # Occupato = totale - libero, NON la colonna "usato" di df.
+    # Da macOS 10.15 "/" e' il solo volume di sistema: la sua colonna
+    # "usato" conta pochi GB, mentre i dati stanno sul volume Dati,
+    # che condivide lo stesso spazio. Totale e libero invece valgono
+    # per tutto il disco, come li mostra il Finder. Prima la
+    # percentuale restava bassissima e l'avviso non scattava mai.
     tot=$(df -k / 2>/dev/null | awk 'NR==2{print $2}')
-    usa=$(df -k / 2>/dev/null | awk 'NR==2{print $3}')
     lib=$(df -k / 2>/dev/null | awk 'NR==2{print $4}')
-    tot=$((tot * 1024)); usa=$((usa * 1024)); lib=$((lib * 1024))
+    case "$tot" in ''|*[!0-9]*) tot=0 ;; esac
+    case "$lib" in ''|*[!0-9]*) lib=0 ;; esac
+    tot=$((tot * 1024)); lib=$((lib * 1024))
+    usa=$((tot - lib)); [ "$usa" -lt 0 ] && usa=0
     pct=0
     [ "$tot" -gt 0 ] && pct=$(( usa * 100 / tot ))
 
@@ -475,7 +483,7 @@ show_network() {
             avviso_add "Nessuna risposta dalla rete: connettivita' assente."
         fi
         printf '   %-20s: ' "Risoluzione DNS"
-        if host -W 4 www.apple.com >/dev/null 2>&1 || nslookup www.apple.com >/dev/null 2>&1; then
+        if host -W 4 www.apple.com >/dev/null 2>&1 || nslookup -timeout=4 -retry=1 www.apple.com >/dev/null 2>&1; then
             printf '%sok%s\n' "$C_GREEN" "$C_OFF"
         else
             printf '%sFALLITA%s\n' "$C_RED" "$C_OFF"
@@ -726,7 +734,9 @@ show_backup() {
 
     # Data dell'ultimo backup: prima da tmutil (richiede il disco
     # collegato), poi dalle preferenze di Time Machine.
-    data=$(tmutil latestbackup 2>/dev/null | grep -oE '[0-9]{4}-[0-9]{2}-[0-9]{2}' | tail -1)
+    # Tempo massimo: con un disco di rete non raggiungibile tmutil
+    # puo' restare in attesa a lungo.
+    data=$(run_timeout 20 tmutil latestbackup 2>/dev/null | grep -oE '[0-9]{4}-[0-9]{2}-[0-9]{2}' | tail -1)
     if [ -z "$data" ]; then
         data=$(defaults read /Library/Preferences/com.apple.TimeMachine 2>/dev/null \
                | grep -oE '[0-9]{4}-[0-9]{2}-[0-9]{2}' | sort | tail -1)
@@ -827,7 +837,7 @@ diagnosi_rete() {
         return 0
     fi
 
-    if host -W 4 www.apple.com >/dev/null 2>&1 || nslookup www.apple.com >/dev/null 2>&1; then
+    if host -W 4 www.apple.com >/dev/null 2>&1 || nslookup -timeout=4 -retry=1 www.apple.com >/dev/null 2>&1; then
         diag_passo ok "Risoluzione dei nomi (DNS) funzionante"
     else
         diag_passo ko "La risoluzione dei nomi (DNS) non funziona" "Internet c'e', ma i nomi dei siti non vengono tradotti in indirizzi. Svuotare la cache DNS spesso risolve."
@@ -869,7 +879,8 @@ diagnosi_lento() {
         *)  diag_passo ok "Disco di avvio SSD" ;;
     esac
 
-    pct=$(df -k / 2>/dev/null | awk 'NR==2{ if ($2 > 0) print int($3 * 100 / $2) }')
+    # totale - libero: vedi show_disk.
+    pct=$(df -k / 2>/dev/null | awk 'NR==2{ if ($2 > 0) print int(($2 - $4) * 100 / $2) }')
     case "$pct" in ''|*[!0-9]*) pct=0 ;; esac
     if [ "$pct" -ge "$CFG_disco_avviso" ]; then
         diag_passo ko "Disco pieno al ${pct}%" "Con poco spazio libero macOS rallenta. Una pulizia sicura recupera spazio senza rischi."

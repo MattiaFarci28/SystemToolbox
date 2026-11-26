@@ -239,7 +239,9 @@ ui_yesno_dialogo() {
     [ -n "$DISPLAY" ] || [ -n "$WAYLAND_DISPLAY" ] || return 2
     local rc=2
     if command -v zenity >/dev/null 2>&1; then
-        zenity --question --title="$titolo" --text="$testo" \
+        # zenity legge --text come markup (Pango): "&" o "<" in un nome
+        # romperebbero la finestra. html_escape li rende testo normale.
+        zenity --question --title="$titolo" --text="$(html_escape "$testo")" \
                --ok-label="Procedi" --cancel-label="Annulla" \
                --default-cancel >/dev/null 2>&1
         rc=$?

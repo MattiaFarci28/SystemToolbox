@@ -632,8 +632,6 @@ clear_folder_content() {
     done <<FINEELENCO
 $elenco
 FINEELENCO
-$elenco
-FINEELENCO
 
     if [ "$TB_DRYRUN" -eq 1 ]; then
         ctx_note "$etichetta: $(format_bytes "$liberati") eliminabili (simulazione)"

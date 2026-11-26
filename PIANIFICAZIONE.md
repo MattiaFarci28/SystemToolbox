@@ -23,11 +23,12 @@ Per sapere com'è andata, apri il report o guarda il codice di uscita:
 
 Apri il **Prompt dei comandi come amministratore** e incolla questa riga, sostituendo il percorso:
 
-```bash
-schtasks /create /tn "System Toolbox" /sc weekly /d SUN /st 10:00 /rl highest /f /tr "powershell.exe -NoProfile -ExecutionPolicy Bypass -File \"C:\percorso\SystemToolbox\Windows\Toolbox.ps1\" -Auto -Console -Report \"C:\percorso\SystemToolbox\Windows\logs\ultimo.html\""
+```bat
+schtasks /create /tn "System Toolbox" /sc weekly /d SUN /st 10:00 /rl highest /f /tr "powershell.exe -NoProfile -ExecutionPolicy Bypass -File \"C:\percorso\SystemToolbox\Windows\Toolbox.ps1\" -Auto -Report \"C:\percorso\SystemToolbox\Windows\logs\ultimo.html\""
 ```
 
 Parte ogni domenica alle 10:00 e salva il report in `logs\ultimo.html`.
+Il testo dopo `/tr` non può superare i 262 caratteri: con un percorso molto lungo, sposta la cartella più in alto.
 
 | Per | Comando |
 |---|---|
@@ -91,6 +92,7 @@ e aggiungi in fondo questa riga, sostituendo il percorso:
 ```
 
 Parte ogni domenica alle 10:00. Le virgolette attorno al percorso servono per lo spazio in `Linux Ubuntu`.
+Se il Desktop si chiama `Scrivania`, usa `/home/TUONOME/Scrivania/...`.
 
 | Per | Comando |
 |---|---|
@@ -103,4 +105,5 @@ Parte ogni domenica alle 10:00. Le virgolette attorno al percorso servono per lo
   le operazioni che la richiedono vengono saltate e il report lo dice.
   L'analisi e la pulizia dell'utente funzionano normalmente.
 - Il computer deve essere acceso all'orario scelto. Se è spento, l'esecuzione salta a quella dopo.
+  Sul Mac, se all'orario scelto è in stop, parte al risveglio.
 - Lo strumento confronta ogni esecuzione con la precedente: nel report vedi quanto spazio è cambiato.

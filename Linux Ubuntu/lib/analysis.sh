@@ -929,7 +929,13 @@ show_backup() {
     if command -v timeshift >/dev/null 2>&1; then
         trovati=$((trovati + 1))
         data=""
-        lista=$(as_root_quiet timeshift --list 2>/dev/null)
+        # Tempo massimo: timeshift a volte deve montare il disco di
+        # backup e, se non risponde, l'analisi resterebbe ferma qui.
+        if command -v timeout >/dev/null 2>&1; then
+            lista=$(as_root_quiet timeout 30 timeshift --list 2>/dev/null)
+        else
+            lista=$(as_root_quiet timeshift --list 2>/dev/null)
+        fi
         if [ -n "$lista" ]; then
             data=$(printf '%s\n' "$lista" | grep -oE '[0-9]{4}-[0-9]{2}-[0-9]{2}_[0-9]{2}-[0-9]{2}-[0-9]{2}' | sort | tail -1 | cut -c1-10)
             backup_riga "Timeshift" "$data" "configurato, nessuna istantanea trovata"

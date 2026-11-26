@@ -455,6 +455,11 @@ $sorgGui = Get-Content -LiteralPath (Join-Path $Radice 'lib\GuiUI.ps1') -Raw
 Check 'pulsanti nell''intestazione' (($sorgGui -match 'x:Name="BtnDiagnosi"') -and ($sorgGui -match 'x:Name="BtnAvvio"')) $true
 Check 'il thread di lavoro esegue la diagnosi' ($sorgGui -match "elseif \(\`$modo -eq 'diagnosi'\)") $true
 Check 'categoria Aggiornamenti nell''elenco' ($sorgGui -match "@\('Pulizia','Rete','Manutenzione','Aggiornamenti'\)") $true
+# Chiudere a meta' lavoro non deve bloccare la finestra ne' troncare
+# l'operazione: niente Ps.Stop(), si chiude al termine.
+Check 'chiusura: nessun Stop() sincrono' ($sorgGui -match '(?m)^(?!\s*#).*\.Ps\.Stop\(\)') $false
+Check 'chiusura: si chiude al termine dell''operazione' ($sorgGui -match 'ChiudiAlTermine') $true
+Check 'Interrompi attivo solo durante le operazioni' ($sorgGui -match "BtnInterrompi\.IsEnabled\s*=\s*\(\`$Modo -eq 'task'\)") $true
 
 # ------------------------------------------------------------
 Titolo 'Punto di ripristino'
