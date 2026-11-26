@@ -524,6 +524,28 @@ function Remove-AlberoSicuro {
     return $tutto
 }
 
+# ------------------------------------------------------------
+#   Il percorso passa da un collegamento?
+#
+#   Remove-AlberoSicuro protegge cio' che sta DENTRO la cartella.
+#   Questo controllo protegge la cartella stessa e quelle sopra:
+#   se un utente trasforma la propria AppData\Local\Temp (o
+#   AppData, o AppData\Local) in un collegamento verso
+#   C:\Windows\System32, la pulizia di "tutti i profili", che gira
+#   come amministratore, svuoterebbe System32. Si risale quindi
+#   fino alla radice: basta un collegamento per saltare la cartella.
+# ------------------------------------------------------------
+function Test-PercorsoConCollegamento {
+    param([Parameter(Mandatory=$true)][string]$Path)
+    $p = $Path
+    while ($p) {
+        $i = Get-Item -LiteralPath $p -Force -ErrorAction SilentlyContinue
+        if ($i -and ($i.Attributes -band [System.IO.FileAttributes]::ReparsePoint)) { return $true }
+        $p = Split-Path -Path $p -Parent
+    }
+    return $false
+}
+
 function Clear-FolderContent {
     param(
         [Parameter(Mandatory=$true)][string]$Path,
@@ -536,6 +558,10 @@ function Clear-FolderContent {
     # accesso negato che finirebbe a schermo sporcando l'output.
     if (-not (Test-Path -LiteralPath $Path -ErrorAction SilentlyContinue)) {
         $Ctx.Note(('{0}: non presente o non accessibile, saltato' -f $Etichetta))
+        return
+    }
+    if (Test-PercorsoConCollegamento -Path $Path) {
+        $Ctx.Note(('{0}: il percorso passa da un collegamento, saltato per sicurezza' -f $Etichetta))
         return
     }
 
@@ -622,6 +648,10 @@ function Remove-FilePattern {
     if (-not $Etichetta) { $Etichetta = $Filtro }
     if (-not (Test-Path -LiteralPath $Path -ErrorAction SilentlyContinue)) {
         $Ctx.Note(('{0}: percorso non presente o non accessibile' -f $Etichetta))
+        return
+    }
+    if (Test-PercorsoConCollegamento -Path $Path) {
+        $Ctx.Note(('{0}: il percorso passa da un collegamento, saltato per sicurezza' -f $Etichetta))
         return
     }
     $file = @(Get-ChildItem -LiteralPath $Path -Filter $Filtro -File -Force -ErrorAction SilentlyContinue)

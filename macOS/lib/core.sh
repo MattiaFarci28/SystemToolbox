@@ -105,7 +105,9 @@ tb_cleanup() {
 log_init() {
     local dir="$1"
     local keep="${2:-$CFG_log_da_conservare}"
-    [ -z "$keep" ] && keep=15
+    case "$keep" in ''|*[!0-9]*) keep=15 ;; esac
+    # Almeno 1: con 0 verrebbe cancellato anche il log appena creato.
+    [ "$keep" -lt 1 ] && keep=1
     mkdir -p "$dir" 2>/dev/null
     TB_LOG="$dir/toolbox_$(date '+%Y-%m-%d_%H-%M-%S').log"
     : > "$TB_LOG" 2>/dev/null
@@ -174,55 +176,87 @@ free_space_bytes() {
 # ============================================================
 #   CANCELLAZIONE
 #
-#   Differenze rispetto alla versione precedente:
-#   - i file nascosti vengono inclusi (dotglob): prima le cache
-#     che iniziano con "." restavano sempre li';
-#   - lo spazio liberato viene misurato davvero, prima e dopo;
-#   - i file bloccati o protetti da SIP non contano come errori:
-#     su macOS e' normale, vengono conteggiati a parte.
+#   clear_folder_content svuota una cartella senza cancellarla.
+#   Regole di sicurezza:
+#   - un collegamento simbolico non viene mai seguito;
+#   - si cancella solo cio' che sta direttamente nella cartella;
+#   - i file nascosti sono inclusi (dotglob);
+#   - i file bloccati o protetti non sono errori: vengono
+#     contati a parte come "saltati";
+#   - lo spazio liberato e' quello misurato davvero.
 # ============================================================
 clear_folder_content() {
-    local path="$1"
-    local etichetta="${2:-$1}"
-    local usa_root="${3:-0}"
+    local path="$1" etichetta="${2:-$1}" usa_root="${3:-0}"
 
+    # Un collegamento simbolico non si segue mai. Chi lo ha creato
+    # potrebbe farlo puntare a una cartella importante, e la pulizia
+    # svuoterebbe quella. Conta soprattutto quando si lavora come
+    # amministratore, per esempio sui cestini degli altri utenti.
+    if [ -L "$path" ]; then
+        ctx_note "$etichetta: e' un collegamento, saltato per sicurezza"
+        return 0
+    fi
     if [ ! -d "$path" ]; then
         ctx_note "$etichetta: non presente, saltato"
         return 0
     fi
 
-    # UNA sola scansione del disco.
-    # Prima si misurava l'intera cartella, si cancellava e si
-    # rimisurava: due attraversamenti completi, e su una cartella
-    # con decine di migliaia di file era il costo dominante
-    # dell'operazione. Qui una sola invocazione di du restituisce
-    # la dimensione di ogni voce di primo livello, poi si somma
-    # solo cio' che viene davvero rimosso.
-    local elenco
-    if [ "$usa_root" -eq 1 ]; then
-        elenco=$(as_root /bin/bash -c '
-            shopt -s dotglob nullglob
-            set -- "$1"/*
-            [ $# -eq 0 ] && exit 0
-            du -sk -- "$@" 2>/dev/null' _ "$path")
-    else
-        elenco=$( ( shopt -s dotglob nullglob
-                    set -- "$path"/*
-                    [ $# -eq 0 ] && exit 0
-                    du -sk -- "$@" 2>/dev/null ) )
+    # Comandi eseguiti come amministratore solo se richiesto.
+    local esegui=""
+    [ "$usa_root" -eq 1 ] && esegui="as_root"
+
+    # Percorso reale della cartella, senza collegamenti in mezzo.
+    # Serve a controllare, prima di ogni cancellazione, di essere
+    # ancora nel posto giusto.
+    local reale
+    reale=$($esegui /bin/bash -c 'cd -P -- "$1" 2>/dev/null && pwd -P' _ "$path")
+    if [ -z "$reale" ] || [ "$reale" = "/" ]; then
+        ctx_fail "$etichetta: percorso non valido, saltato"
+        return 0
     fi
+
+    # UNA sola scansione del disco: du restituisce la dimensione di
+    # ogni voce di primo livello, poi si somma solo cio' che viene
+    # davvero rimosso. Misurare tutta la cartella prima e dopo
+    # costava il doppio. dotglob include i file nascosti.
+    local elenco
+    elenco=$($esegui /bin/bash -c '
+        shopt -s dotglob nullglob
+        set -- "$1"/*
+        [ $# -eq 0 ] && exit 0
+        du -sk -- "$@" 2>/dev/null' _ "$reale")
 
     if [ -z "$elenco" ]; then
         ctx_note "$etichetta: gia' vuoto"
         return 0
     fi
 
+    # Cancella UNA voce. Entra nella cartella e verifica che sia
+    # ancora quella reale trovata sopra: se nel frattempo qualcuno
+    # l'ha sostituita con un collegamento, non cancella niente.
+    # Poi rimuove "./nome", che non puo' uscire dalla cartella.
+    # Risultato: 0 rimossa, 1 rimasta in parte (stampa i KB
+    # rimasti), 2 cartella cambiata.
+    local svuota_voce='
+        cd -P -- "$1" 2>/dev/null && [ "$(pwd -P)" = "$1" ] || exit 2
+        rm -rf -- "./$2" 2>/dev/null
+        if [ ! -e "./$2" ] && [ ! -L "./$2" ]; then exit 0; fi
+        du -sk -- "./$2" 2>/dev/null | { read -r k _; echo "${k:-0}"; }
+        exit 1'
+
     local liberati=0 rimossi=0 bloccati=0
-    local kb voce dim resto
+    local kb voce nome dim resto esito
 
     while IFS=$'\t' read -r kb voce; do
-        [ -z "$voce" ] && continue
         case "$kb" in ''|*[!0-9]*) continue ;; esac
+
+        # Ogni riga deve indicare un elemento DIRETTAMENTE dentro la
+        # cartella. Un nome di file con un "a capo" puo' fingere una
+        # riga in piu' con un altro percorso: viene scartata qui.
+        case "$voce" in "$reale"/*) ;; *) continue ;; esac
+        nome=${voce#"$reale"/}
+        case "$nome" in ''|.|..|*/*) continue ;; esac
+
         dim=$(( kb * 1024 ))
 
         if [ "$TB_DRYRUN" -eq 1 ]; then
@@ -230,22 +264,20 @@ clear_folder_content() {
             continue
         fi
 
-        if [ "$usa_root" -eq 1 ]; then
-            as_root rm -rf -- "$voce" 2>/dev/null
-        else
-            rm -rf -- "$voce" 2>/dev/null
-        fi
-
-        if [ ! -e "$voce" ]; then
-            liberati=$(( liberati + dim )); rimossi=$(( rimossi + 1 ))
-        else
-            # Rimozione parziale: dentro c'era qualcosa di bloccato.
-            # Si rimisura solo questa voce, non tutta la cartella.
-            resto=$(bytes_of_path "$voce")
-            [ "$resto" -lt "$dim" ] && liberati=$(( liberati + dim - resto ))
-            bloccati=$(( bloccati + 1 ))
-        fi
+        resto=$($esegui /bin/bash -c "$svuota_voce" _ "$reale" "$nome")
+        esito=$?
+        case "$esito" in
+            0)  liberati=$(( liberati + dim )); rimossi=$(( rimossi + 1 )) ;;
+            1)  # Rimasto qualcosa: file in uso o protetti.
+                case "$resto" in ''|*[!0-9]*) resto=$kb ;; esac
+                [ "$resto" -lt "$kb" ] && liberati=$(( liberati + (kb - resto) * 1024 ))
+                bloccati=$(( bloccati + 1 )) ;;
+            *)  ctx_fail "$etichetta: la cartella e' cambiata durante la pulizia, interrotto"
+                break ;;
+        esac
     done <<FINEELENCO
+$elenco
+FINEELENCO
 $elenco
 FINEELENCO
 

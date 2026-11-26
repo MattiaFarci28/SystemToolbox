@@ -312,6 +312,23 @@ try {
     Check 'gli altri file vengono rimossi comunque' (Test-Path -LiteralPath (Join-Path $pulire 'cartella\libero.tmp')) $false
 } finally { $aperto.Dispose() }
 
+# Collegamento sulla cartella stessa o PIU' IN ALTO nel percorso:
+# per esempio AppData\Local di un altro utente trasformata in un
+# collegamento verso C:\Windows. Niente deve essere cancellato.
+$ponte = Join-Path $radiceProva 'ponte'
+New-Item -ItemType Junction -Path $ponte -Target $bersaglio | Out-Null
+New-Item -ItemType Directory -Path (Join-Path $bersaglio 'Temp') -Force | Out-Null
+Set-Content -LiteralPath (Join-Path $bersaglio 'Temp\prezioso2.txt') -Value 'non toccare'
+$c = New-TaskContext
+Clear-FolderContent -Path $ponte -Ctx $c -Etichetta 'prova' *> $null
+Check 'cartella che e'' un collegamento: non svuotata' (Test-Path -LiteralPath (Join-Path $bersaglio 'prezioso.txt')) $true
+Clear-FolderContent -Path (Join-Path $ponte 'Temp') -Ctx $c -Etichetta 'prova' *> $null
+Check 'collegamento piu'' in alto nel percorso: non svuotata' (Test-Path -LiteralPath (Join-Path $bersaglio 'Temp\prezioso2.txt')) $true
+Remove-FilePattern -Path $ponte -Filtro '*.txt' -Ctx $c -Etichetta 'prova' *> $null
+Check 'rimozione per nome attraverso un collegamento: niente rimosso' (Test-Path -LiteralPath (Join-Path $bersaglio 'prezioso.txt')) $true
+# Si toglie il solo collegamento, prima della pulizia finale.
+[System.IO.Directory]::Delete($ponte, $false)
+
 $sorgTasks = Get-Content -LiteralPath (Join-Path $Radice 'lib\Tasks.ps1') -Raw
 Check 'Windows.old non usa takeown ne'' icacls' ($sorgTasks -match '(?m)^(?!\s*#).*(takeown|icacls)') $false
 $sorgTutto = ((Get-ChildItem -LiteralPath (Join-Path $Radice 'lib') -Filter '*.ps1' | ForEach-Object { Get-Content -LiteralPath $_.FullName -Raw }) -join "`n")

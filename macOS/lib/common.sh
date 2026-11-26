@@ -65,8 +65,12 @@ cfg_load() {
     local f="$1"
     [ -f "$f" ] || return 0
     local riga k v
+    # Il file viene solo LETTO: ogni valore e' confrontato con quelli
+    # ammessi e scartato se non va bene. Nessuna riga viene eseguita.
     while IFS= read -r riga || [ -n "$riga" ]; do
-        case "$riga" in ''|'#'*|' '*'#'*) ;; esac
+        # Un file salvato su Windows ha "\r" a fine riga: senza toglierlo
+        # i numeri non verrebbero riconosciuti e la riga ignorata.
+        riga=${riga%$'\r'}
         case "$riga" in ''|'#'*) continue ;; esac
         case "$riga" in *=*) ;; *) continue ;; esac
         k=${riga%%=*}
@@ -80,8 +84,10 @@ cfg_load() {
 
         case "$k" in
             disco_avviso|disco_critico|ram_critica|swap_avviso_mb|avvii_avviso|uptime_avviso_giorni|log_da_conservare|cache_aggiornamenti_ore|misura_max_secondi|backup_avviso_giorni)
-                case "$v" in ''|*[!0-9]*) continue ;; esac
-                printf -v "CFG_$k" '%s' "$v" ;;
+                # Solo cifre, al massimo 9 (niente numeri enormi), e senza
+                # zeri iniziali: per bash "08" sarebbe un numero ottale non valido.
+                case "$v" in ''|*[!0-9]*|??????????*) continue ;; esac
+                printf -v "CFG_$k" '%s' "$((10#$v))" ;;
             colori)
                 case "$v" in auto|si|no|daltonici) printf -v "CFG_$k" '%s' "$v" ;; esac ;;
             lingua)

@@ -433,6 +433,12 @@ task_net_renew() {
         ctx_note "ipconfig set $iface DHCP (simulazione)"
         return 0
     fi
+    # Solo se l'indirizzo arriva gia' dal router (DHCP). Con un
+    # indirizzo impostato a mano, "ipconfig set DHCP" lo sostituirebbe.
+    if [ -z "$(ipconfig getpacket "$iface" 2>/dev/null)" ]; then
+        ctx_note "$iface non usa DHCP (indirizzo impostato a mano): non toccato"
+        return 0
+    fi
     ctx_note "Rinnovo indirizzo su $iface..."
     as_root ipconfig set "$iface" DHCP 2>/dev/null
     sleep 3
@@ -452,16 +458,29 @@ task_net_reset() {
         CTX_REBOOT=1
         return 0
     fi
+    # Prima la copia di sicurezza: se non si riesce a crearla,
+    # non si cancella niente.
     local backup
     backup="$dir/backup-toolbox-$(date '+%Y%m%d-%H%M%S')"
-    as_root mkdir -p "$backup" 2>/dev/null
-    local f
+    if ! as_root mkdir -p "$backup" 2>/dev/null; then
+        ctx_fail "Impossibile creare la copia di sicurezza: nessun file toccato"
+        return 0
+    fi
+    local f rimossi=0
     for f in com.apple.airport.preferences.plist NetworkInterfaces.plist preferences.plist com.apple.network.identification.plist; do
-        if [ -f "$dir/$f" ]; then
-            as_root cp "$dir/$f" "$backup/" 2>/dev/null && as_root rm -f "$dir/$f" 2>/dev/null
-            CTX_ITEMS=$((CTX_ITEMS + 1))
+        [ -f "$dir/$f" ] || continue
+        # Ogni file si rimuove solo se la sua copia e' riuscita.
+        if as_root cp -p "$dir/$f" "$backup/" 2>/dev/null && as_root rm -f "$dir/$f" 2>/dev/null; then
+            rimossi=$((rimossi + 1))
+        else
+            ctx_fail "$f non rimosso"
         fi
     done
+    CTX_ITEMS=$((CTX_ITEMS + rimossi))
+    if [ "$rimossi" -eq 0 ]; then
+        ctx_note "Nessun file di configurazione rimosso"
+        return 0
+    fi
     ctx_note "Copia di sicurezza in $backup"
     ctx_note "Configurazione di rete azzerata: effettiva dopo il riavvio"
     CTX_REBOOT=1
@@ -528,14 +547,20 @@ task_maint_updates() {
         return 0
     fi
     ctx_note "Download e installazione in corso: puo' richiedere molto tempo..."
-    local out
-    out=$(as_root softwareupdate -i -a 2>&1)
+    # L'output resta visibile mentre lavora (tee /dev/tty): su
+    # Apple Silicon softwareupdate puo' chiedere la password, e una
+    # domanda nascosta sembrerebbe un blocco.
+    local out stato
+    out=$(as_root softwareupdate -i -a 2>&1 | tee /dev/tty 2>/dev/null; exit "${PIPESTATUS[0]}")
+    stato=$?
     if echo "$out" | grep -qi 'No updates\|Nessun aggiornamento'; then
         ctx_note "Nessun aggiornamento da installare"
+    elif [ "$stato" -ne 0 ]; then
+        ctx_fail "softwareupdate ha restituito un errore (codice $stato): aggiornamenti non installati o incompleti"
     else
         ctx_note "Aggiornamenti installati"
-        echo "$out" | grep -qi 'restart\|riavvi' && CTX_REBOOT=1
     fi
+    echo "$out" | grep -qi 'restart\|riavvi' && CTX_REBOOT=1
     return 0
 }
 

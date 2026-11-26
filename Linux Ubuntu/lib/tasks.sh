@@ -340,7 +340,8 @@ task_clean_kernels() {
     recente=$(echo "$installati" | tail -1)
 
     # Non si tocca mai il kernel in uso ne' il piu' recente.
-    da_rimuovere=$(echo "$installati" | grep -v "$attuale" | grep -v "^${recente}$")
+    # Con "attuale" vuoto grep -v scarta tutto: nessun kernel rimosso.
+    da_rimuovere=$(echo "$installati" | grep -vF -- "$attuale" | grep -vxF -- "$recente")
     n=$(echo "$da_rimuovere" | grep -c '[^[:space:]]')
 
     if [ "$n" -eq 0 ]; then
@@ -354,11 +355,36 @@ task_clean_kernels() {
         ctx_note "$n kernel verrebbero rimossi (simulazione)"
         return 0
     fi
+    # Prova generale senza toccare niente (apt-get -s): apt dice
+    # cosa rimuoverebbe davvero. Insieme a un kernel cadono i
+    # pacchetti legati a quella versione (moduli, header, driver),
+    # che finiscono tutti con lo stesso nome di versione. Se cadesse
+    # altro, per esempio "linux-image-generic" che porta i kernel
+    # nuovi con gli aggiornamenti, ci si ferma senza toccare nulla.
+    # I nomi dei pacchetti non hanno spazi: la divisione in parole
+    # di $lista e' voluta, un pacchetto per argomento.
+    local lista sim p k ok fuori=""
+    lista=$(echo "$da_rimuovere" | tr '\n' ' ')
+    # shellcheck disable=SC2086
+    if ! sim=$(LC_ALL=C apt-get -s purge $lista 2>/dev/null); then
+        ctx_fail "La prova di rimozione non e' riuscita: nessun kernel toccato"
+        return 0
+    fi
+    for p in $(printf '%s\n' "$sim" | awk '/^Purg /{print $2}'); do
+        ok=0
+        for k in $lista; do
+            case "$p" in *"${k#linux-image-}") ok=1; break ;; esac
+        done
+        [ "$ok" -eq 1 ] || fuori="$fuori $p"
+    done
+    if [ -n "$fuori" ]; then
+        ctx_fail "Verrebbero rimossi anche altri pacchetti:$fuori. Nessun kernel toccato: rimuovili a mano se sei sicuro"
+        return 0
+    fi
+
     local prima; prima=$(free_space_bytes)
-    # I nomi dei pacchetti non contengono spazi: la divisione in parole
-    # e' voluta, serve a passarli come argomenti separati.
-    # shellcheck disable=SC2046
-    as_root env LC_ALL=C apt-get purge -y $(echo "$da_rimuovere" | tr '\n' ' ') >/dev/null 2>&1 || \
+    # shellcheck disable=SC2086
+    as_root env LC_ALL=C apt-get purge -y $lista >/dev/null 2>&1 || \
         ctx_fail "La rimozione di uno o piu' kernel non e' riuscita"
     local lib=$(( $(free_space_bytes) - prima )); [ "$lib" -lt 0 ] && lib=0
     CTX_BYTES=$((CTX_BYTES + lib))
@@ -441,14 +467,25 @@ task_net_renew() {
     if [ "$TB_DRYRUN" -eq 1 ]; then ctx_note "Rinnovo DHCP su $iface (simulazione)"; return 0; fi
 
     ctx_note "Rinnovo indirizzo su $iface..."
+    # Si usa chi gestisce davvero la rete. Un indirizzo impostato
+    # a mano non viene mai sostituito con uno DHCP.
     if command -v nmcli >/dev/null 2>&1 && nmcli -t -f RUNNING general 2>/dev/null | grep -q running; then
-        as_root nmcli device reapply "$iface" >/dev/null 2>&1 || \
-            as_root nmcli device disconnect "$iface" >/dev/null 2>&1 && as_root nmcli device connect "$iface" >/dev/null 2>&1
-    elif command -v dhclient >/dev/null 2>&1; then
+        # reapply rilegge la configurazione; se non basta, si
+        # riconnette l'interfaccia (cade per un paio di secondi).
+        if ! as_root nmcli device reapply "$iface" >/dev/null 2>&1; then
+            as_root nmcli device disconnect "$iface" >/dev/null 2>&1
+            as_root nmcli device connect "$iface" >/dev/null 2>&1
+        fi
+    elif systemctl is-active --quiet systemd-networkd 2>/dev/null && command -v networkctl >/dev/null 2>&1; then
+        # renew agisce solo se l'interfaccia usa DHCP.
+        as_root networkctl renew "$iface" >/dev/null 2>&1
+    elif command -v dhclient >/dev/null 2>&1 && pgrep -x dhclient >/dev/null 2>&1; then
+        # Solo se dhclient e' gia' al lavoro: avviarlo su
+        # un'interfaccia con indirizzo fisso ne cambierebbe la rete.
         as_root dhclient -r "$iface" >/dev/null 2>&1
         as_root dhclient "$iface" >/dev/null 2>&1
     else
-        ctx_fail "Nessuno strumento DHCP disponibile (nmcli o dhclient)"
+        ctx_note "Nessun client DHCP attivo su $iface: indirizzo non toccato"
         return 0
     fi
     sleep 3
@@ -634,7 +671,8 @@ task_maint_fstrim() {
 task_maint_pam_lastlog() {
     local file="/etc/pam.d/login"
     [ -f "$file" ] || { ctx_note "$file non presente"; return 0; }
-    if ! grep -q "pam_lastlog" "$file" 2>/dev/null; then
+    # Contano solo le righe attive: un commento non da' fastidio.
+    if ! grep -Eq '^[[:space:]]*[^#[:space:]].*pam_lastlog' "$file" 2>/dev/null; then
         ctx_note "Nessun riferimento a pam_lastlog: niente da correggere"
         return 0
     fi
@@ -642,11 +680,17 @@ task_maint_pam_lastlog() {
     # sarebbe un danno, non una correzione.
     local ver
     ver=$(awk -F= '/^VERSION_ID=/{gsub(/"/,"",$2); print $2}' /etc/os-release 2>/dev/null)
-    if [ -f /lib/x86_64-linux-gnu/security/pam_lastlog.so ] || \
-       [ -f /usr/lib/x86_64-linux-gnu/security/pam_lastlog.so ]; then
-        ctx_note "Il modulo pam_lastlog.so e' presente su questo sistema (Ubuntu $ver): la riga e' legittima, non la tocco"
-        return 0
-    fi
+    # Si cerca il modulo in tutte le cartelle dove PAM puo' tenerlo,
+    # per ogni architettura (Intel/AMD, ARM come Raspberry Pi, ...).
+    # Se c'e', la riga e' corretta e non si tocca.
+    local m
+    for m in /lib/security /lib/*/security /lib64/security \
+             /usr/lib/security /usr/lib/*/security /usr/lib64/security; do
+        if [ -f "$m/pam_lastlog.so" ]; then
+            ctx_note "Il modulo pam_lastlog.so e' presente ($m, versione $ver): la riga e' legittima, non la tocco"
+            return 0
+        fi
+    done
     if [ "$TB_DRYRUN" -eq 1 ]; then
         ctx_note "La riga pam_lastlog verrebbe rimossa da $file (simulazione)"
         return 0
@@ -654,8 +698,13 @@ task_maint_pam_lastlog() {
     local backup
     backup="${file}.toolbox-$(date '+%Y%m%d-%H%M%S')"
     as_root cp "$file" "$backup" 2>/dev/null || { ctx_fail "Copia di sicurezza non riuscita: non procedo"; return 0; }
-    as_root sed -i '/pam_lastlog/d' "$file" 2>/dev/null
+    # Si tolgono solo le righe attive con pam_lastlog; i commenti restano.
+    if ! as_root sed -i '/^[[:space:]]*#/!{/pam_lastlog/d}' "$file" 2>/dev/null; then
+        ctx_fail "Modifica non riuscita: il file e' rimasto com'era. Copia in $backup"
+        return 0
+    fi
     CTX_ITEMS=$((CTX_ITEMS + 1))
     ctx_note "Riga rimossa. Copia di sicurezza in $backup"
+    ctx_note "Per tornare indietro: sudo cp '$backup' '$file'"
     return 0
 }

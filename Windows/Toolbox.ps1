@@ -334,7 +334,10 @@ function Invoke-Personalizzata {
         if (-not $pezzo) { continue }
         $idx = 0
         if ([int]::TryParse($pezzo.Trim(), [ref]$idx)) {
-            if ($idx -ge 1 -and $idx -le $tutti.Count) { $scelti.Add($tutti[$idx - 1]) | Out-Null }
+            # Un numero ripetuto conta una volta: l'operazione non va eseguita due volte.
+            if ($idx -ge 1 -and $idx -le $tutti.Count) {
+                if (-not $scelti.Contains($tutti[$idx - 1])) { $scelti.Add($tutti[$idx - 1]) | Out-Null }
+            }
             else { Write-Warn ('Numero fuori intervallo: {0}' -f $idx) }
         } else {
             Write-Warn ('Valore non valido: {0}' -f $pezzo)

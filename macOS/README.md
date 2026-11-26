@@ -193,7 +193,7 @@ Non usate su macOS: `ram_critica` (conta lo swap), `avanzamento` (esiste solo su
 bash test/collaudo.sh
 ```
 
-142 controlli, non toccano il sistema.
+146 controlli, non toccano il sistema.
 Lo strumento è stato provato anche su un Mac reale.
 
 ## File

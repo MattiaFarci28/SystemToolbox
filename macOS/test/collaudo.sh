@@ -120,6 +120,13 @@ check "valore testuale ammesso"     "$CFG_colori"          "daltonici"
 check "valore non numerico rifiutato" "$CFG_disco_avviso"  "80"
 rm -f "$CFG_TEST"
 CFG_colori=auto; CFG_disco_critico=90; CFG_swap_avviso_mb=1024
+# File salvato su Windows (righe che finiscono con CR LF), zeri iniziali, numero enorme.
+printf 'uptime_avviso_giorni=08\r\nlog_da_conservare=99999999999\r\n' > "$CFG_TEST"
+cfg_load "$CFG_TEST"
+check "riga di Windows e zeri iniziali" "$CFG_uptime_avviso_giorni" "8"
+check "numero enorme rifiutato"         "$CFG_log_da_conservare"    "15"
+rm -f "$CFG_TEST"
+CFG_uptime_avviso_giorni=7
 
 # ------------------------------------------------------------
 titolo "Motore dei task: i tre esiti"
@@ -156,6 +163,30 @@ check "cancellazione completa (file nascosto compreso)" "$RIMASTI" "0"
 check "elementi contati" "$CTX_ITEMS" "5"
 [ "$CTX_BYTES" -gt 300000 ] && ok "byte liberati coerenti ($(format_bytes $CTX_BYTES))" || ko "byte liberati incoerenti: $CTX_BYTES"
 rm -rf "$SB"
+
+# ------------------------------------------------------------
+titolo "Cancellazione: protezioni"
+SB="/tmp/tb_sandbox_$$"; FUORI="/tmp/tb_fuori_$$"
+mkdir -p "$SB" "$FUORI"
+echo dati > "$FUORI/vittima"
+
+# Un collegamento a un'altra cartella non viene seguito.
+ln -s "$FUORI" "$SB.link"
+ctx_reset; TB_DRYRUN=0
+clear_folder_content "$SB.link" "prova" >/dev/null 2>&1
+[ -f "$FUORI/vittima" ] && ok "collegamento simbolico non seguito" || ko "un collegamento ha fatto svuotare un'altra cartella"
+rm -f "$SB.link"
+
+# Un nome con un "a capo" finge una riga di du che indica "vittima":
+# prima veniva cancellato il file con quel nome nella cartella corrente.
+if touch "$SB/trappola$(printf '\n5\t')vittima" 2>/dev/null; then
+    ctx_reset
+    ( cd "$FUORI" && clear_folder_content "$SB" "prova" >/dev/null 2>&1 )
+    [ -f "$FUORI/vittima" ] && ok "nome con a capo: nessun file esterno cancellato" || ko "nome con a capo: cancellato un file fuori dalla cartella"
+else
+    ok "nome con a capo: non creabile su questo file system (saltato)"
+fi
+rm -rf "$SB" "$FUORI"
 
 # ------------------------------------------------------------
 titolo "Report e JSON"

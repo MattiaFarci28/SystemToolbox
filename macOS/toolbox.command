@@ -283,9 +283,12 @@ selezione_personalizzata() {
     local scelti="" p n=0 id
     for p in $(echo "$sel" | tr ',;' '  '); do
         case "$p" in
-            ''|*[!0-9]*) ui_warn "Valore non valido: $p"; continue ;;
+            ''|*[!0-9]*|??????????*) ui_warn "Valore non valido: $p"; continue ;;
         esac
-        id=$(echo "$tutti" | tr ' ' '\n' | grep -v '^$' | sed -n "${p}p")
+        p=$((10#$p))
+        [ "$p" -ge 1 ] && id=$(echo "$tutti" | tr ' ' '\n' | grep -v '^$' | sed -n "${p}p") || id=""
+        # Un numero ripetuto conta una volta: l'operazione non va eseguita due volte.
+        case " $scelti " in *" $id "*) [ -n "$id" ] && continue ;; esac
         if [ -n "$id" ]; then
             scelti="$scelti $id"; n=$((n + 1))
         else
@@ -355,11 +358,19 @@ gestione_backup_ios() {
     local sel; read -r sel
     [ -z "$sel" ] && { ui_dim "Nessuna eliminazione."; return 0; }
 
+    # Ogni numero diventa il percorso del backup corrispondente.
+    # Si accettano solo numeri dell'elenco; un numero ripetuto
+    # conta una volta sola, cosi' il totale mostrato e' quello vero.
     local scelti="" pezzo riga
     for pezzo in $(echo "$sel" | tr ',;' '  '); do
-        case "$pezzo" in ''|*[!0-9]*) ui_warn "Valore non valido: $pezzo"; continue ;; esac
+        case "$pezzo" in ''|*[!0-9]*|??????????*) ui_warn "Valore non valido: $pezzo"; continue ;; esac
+        pezzo=$((10#$pezzo))
+        if [ "$pezzo" -lt 1 ] || [ "$pezzo" -gt "$n" ]; then
+            ui_warn "Numero fuori intervallo: $pezzo"; continue
+        fi
         riga=$(printf '%s' "$elenco" | sed -n "${pezzo}p")
-        [ -n "$riga" ] && scelti="$scelti$riga"$'\n' || ui_warn "Numero fuori intervallo: $pezzo"
+        case $'\n'"$scelti" in *$'\n'"$riga"$'\n'*) continue ;; esac
+        scelti="$scelti$riga"$'\n'
     done
     [ -z "$scelti" ] && { ui_warn "Nessun backup valido selezionato."; return 0; }
 
@@ -381,6 +392,9 @@ Procedere?" || { ui_dim "Annullato."; return 0; }
     prima=$(free_space_bytes)
     while IFS= read -r d; do
         [ -z "$d" ] && continue
+        # Ultimo controllo: si cancella solo una cartella che sta
+        # direttamente dentro la cartella dei backup.
+        case "${d#"$base"/}" in "$d"|''|*/*) continue ;; esac
         if rm -rf -- "$d" 2>/dev/null; then
             eliminati=$(( eliminati + 1 ))
             log_write "Backup iOS eliminato: $d" "INFO"
@@ -391,8 +405,10 @@ Procedere?" || { ui_dim "Annullato."; return 0; }
 $scelti
 FINESCELTI
     dopo=$(free_space_bytes)
+    # Altri programmi scrivono nel frattempo: la differenza puo' uscire negativa.
+    local liberati=$(( dopo - prima )); [ "$liberati" -lt 0 ] && liberati=0
     echo ""
-    ui_ok "$eliminati backup eliminati, $(format_bytes $(( dopo - prima ))) liberati."
+    ui_ok "$eliminati backup eliminati, $(format_bytes "$liberati") liberati."
     ui_notifica "Backup iOS: $eliminati eliminati"
 }
 
@@ -468,11 +484,17 @@ FINEAVVIO
     local sel; read -r sel
     [ -z "$sel" ] && return 0
 
+    # Solo numeri dell'elenco; un numero ripetuto conta una volta.
     local scelte="" p riga
     for p in $(echo "$sel" | tr ',;' '  '); do
-        case "$p" in ''|*[!0-9]*) ui_warn "Valore non valido: $p"; continue ;; esac
+        case "$p" in ''|*[!0-9]*|??????????*) ui_warn "Valore non valido: $p"; continue ;; esac
+        p=$((10#$p))
+        if [ "$p" -lt 1 ] || [ "$p" -gt "$n" ]; then
+            ui_warn "Numero fuori intervallo: $p"; continue
+        fi
         riga=$(printf '%s\n' "$elenco" | sed -n "${p}p")
-        [ -n "$riga" ] && scelte="$scelte$riga"$'\n' || ui_warn "Numero fuori intervallo: $p"
+        case $'\n'"$scelte" in *$'\n'"$riga"$'\n'*) continue ;; esac
+        scelte="$scelte$riga"$'\n'
     done
     [ -z "$scelte" ] && { ui_warn "Nessuna voce valida."; return 0; }
 

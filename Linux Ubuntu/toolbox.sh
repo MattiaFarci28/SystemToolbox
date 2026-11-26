@@ -268,8 +268,11 @@ selezione_personalizzata() {
 
     local scelti="" p n=0 id
     for p in $(echo "$sel" | tr ',;' '  '); do
-        case "$p" in ''|*[!0-9]*) ui_warn "Valore non valido: $p"; continue ;; esac
-        id=$(echo "$tutti" | tr ' ' '\n' | grep -v '^$' | sed -n "${p}p")
+        case "$p" in ''|*[!0-9]*|??????????*) ui_warn "Valore non valido: $p"; continue ;; esac
+        p=$((10#$p))
+        [ "$p" -ge 1 ] && id=$(echo "$tutti" | tr ' ' '\n' | grep -v '^$' | sed -n "${p}p") || id=""
+        # Un numero ripetuto conta una volta: l'operazione non va eseguita due volte.
+        case " $scelti " in *" $id "*) [ -n "$id" ] && continue ;; esac
         if [ -n "$id" ]; then scelti="$scelti $id"; n=$((n + 1))
         else ui_warn "Numero fuori intervallo: $p"; fi
     done

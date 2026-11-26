@@ -117,6 +117,13 @@ check "valore testuale ammesso"     "$CFG_colori"          "daltonici"
 check "valore non numerico rifiutato" "$CFG_disco_avviso"  "80"
 rm -f "$CFG_TEST"
 CFG_colori=auto; CFG_disco_critico=90; CFG_swap_avviso_mb=1024
+# File salvato su Windows (righe che finiscono con CR LF), zeri iniziali, numero enorme.
+printf 'uptime_avviso_giorni=08\r\nlog_da_conservare=99999999999\r\n' > "$CFG_TEST"
+cfg_load "$CFG_TEST"
+check "riga di Windows e zeri iniziali" "$CFG_uptime_avviso_giorni" "8"
+check "numero enorme rifiutato"         "$CFG_log_da_conservare"    "15"
+rm -f "$CFG_TEST"
+CFG_uptime_avviso_giorni=7
 
 # ------------------------------------------------------------
 titolo "Motore dei task: i tre esiti"
@@ -153,6 +160,30 @@ check "cancellazione completa (file nascosto compreso)" "$RIMASTI" "0"
 check "elementi contati" "$CTX_ITEMS" "5"
 [ "$CTX_BYTES" -gt 300000 ] && ok "byte liberati coerenti ($(format_bytes $CTX_BYTES))" || ko "byte liberati incoerenti: $CTX_BYTES"
 rm -rf "$SB"
+
+# ------------------------------------------------------------
+titolo "Cancellazione: protezioni"
+SB="/tmp/tb_sandbox_$$"; FUORI="/tmp/tb_fuori_$$"
+mkdir -p "$SB" "$FUORI"
+echo dati > "$FUORI/vittima"
+
+# Un collegamento a un'altra cartella non viene seguito.
+ln -s "$FUORI" "$SB.link"
+ctx_reset; TB_DRYRUN=0
+clear_folder_content "$SB.link" "prova" >/dev/null 2>&1
+[ -f "$FUORI/vittima" ] && ok "collegamento simbolico non seguito" || ko "un collegamento ha fatto svuotare un'altra cartella"
+rm -f "$SB.link"
+
+# Un nome con un "a capo" finge una riga di du che indica "vittima":
+# prima veniva cancellato il file con quel nome nella cartella corrente.
+if touch "$SB/trappola$(printf '\n5\t')vittima" 2>/dev/null; then
+    ctx_reset
+    ( cd "$FUORI" && clear_folder_content "$SB" "prova" >/dev/null 2>&1 )
+    [ -f "$FUORI/vittima" ] && ok "nome con a capo: nessun file esterno cancellato" || ko "nome con a capo: cancellato un file fuori dalla cartella"
+else
+    ok "nome con a capo: non creabile su questo file system (saltato)"
+fi
+rm -rf "$SB" "$FUORI"
 
 # ------------------------------------------------------------
 titolo "Report e JSON"
@@ -644,6 +675,30 @@ for fn in pkg_elenco_aggiornabili pkg_elenco_orfani pkg_elenco_rimossi_completo 
 done
 ok "interfaccia del gestore pacchetti completa"
 TB_PKG=""; TB_PKG_NOME="nessuno"
+
+# ------------------------------------------------------------
+titolo "Kernel vecchi: protezioni"
+# Tutto simulato con funzioni finte: nessun comando vero viene eseguito.
+_k_orig="$(declare -f as_root free_space_bytes salta_se_virtuale)"
+_k_pkg=$TB_PKG; TB_PKG=apt; TB_DRYRUN=0
+salta_se_virtuale() { return 1; }
+free_space_bytes()  { echo 0; }
+uname() { echo "6.8.0-45-generic"; }
+dpkg()  { printf 'ii  linux-image-6.8.0-40-generic x\nii  linux-image-6.8.0-45-generic x\nii  linux-image-6.8.0-50-generic x\n'; }
+as_root() { K_ESEGUITO="$*"; }
+
+# apt toglierebbe anche il pacchetto che porta i kernel nuovi: ci si ferma.
+apt-get() { printf 'Purg linux-image-6.8.0-40-generic [x]\nPurg linux-image-generic [x]\n'; }
+K_ESEGUITO=""; ctx_reset; task_clean_kernels >/dev/null 2>&1
+check "si ferma se cadrebbe anche linux-image-generic" "$K_ESEGUITO" ""
+
+# Solo pacchetti della versione vecchia: si procede, e solo con quella.
+apt-get() { printf 'Purg linux-image-6.8.0-40-generic [x]\nPurg linux-modules-extra-6.8.0-40-generic [x]\n'; }
+K_ESEGUITO=""; ctx_reset; task_clean_kernels >/dev/null 2>&1
+check "rimuove solo il kernel vecchio" "$K_ESEGUITO" "env LC_ALL=C apt-get purge -y linux-image-6.8.0-40-generic"
+
+unset -f uname dpkg apt-get
+eval "$_k_orig"; TB_PKG=$_k_pkg
 
 # ------------------------------------------------------------
 titolo "Rilevamento container"

@@ -150,8 +150,15 @@ ok "Avviatore creato e reso eseguibile"
 #   versioni di macOS, quindi si prova finche' non se ne trova una.
 # ------------------------------------------------------------
 icona_fatta=""
+# La cartella temporanea si usa solo se mktemp l'ha creata davvero:
+# altrimenti il percorso diventerebbe "/icona.iconset" e la pulizia
+# finale proverebbe a cancellare "/".
+TMP_ICONA=""
 if [ -f "$TB_DIR/icona.png" ] && command -v sips >/dev/null 2>&1 && command -v iconutil >/dev/null 2>&1; then
-    SET="$(mktemp -d "${TMPDIR:-/tmp}/tb_icona_XXXXXX")/icona.iconset"
+    TMP_ICONA=$(mktemp -d "${TMPDIR:-/tmp}/tb_icona_XXXXXX" 2>/dev/null) || TMP_ICONA=""
+fi
+if [ -n "$TMP_ICONA" ] && [ -d "$TMP_ICONA" ]; then
+    SET="$TMP_ICONA/icona.iconset"
     mkdir -p "$SET"
     for n in 16 32 128 256 512; do
         sips -z "$n" "$n" "$TB_DIR/icona.png" --out "$SET/icon_${n}x${n}.png" >/dev/null 2>&1
@@ -162,7 +169,7 @@ if [ -f "$TB_DIR/icona.png" ] && command -v sips >/dev/null 2>&1 && command -v i
         icona_fatta="si"
         ok "Icona: logo di System Toolbox"
     fi
-    rm -rf "$(dirname "$SET")"
+    rm -rf "$TMP_ICONA"
 fi
 
 CORETYPES="/System/Library/CoreServices/CoreTypes.bundle/Contents/Resources"

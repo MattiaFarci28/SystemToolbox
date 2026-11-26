@@ -114,7 +114,8 @@ function Import-Configurazione {
 
         if ($numeriche -contains $k) {
             $n = 0
-            if ([int]::TryParse($v, [ref]$n)) { $script:CFG[$k] = $n }
+            # Solo numeri interi non negativi: soglie e conteggi.
+            if ([int]::TryParse($v, [ref]$n) -and $n -ge 0) { $script:CFG[$k] = $n }
         } elseif ($testuali.ContainsKey($k)) {
             if ($testuali[$k] -contains $v) { $script:CFG[$k] = $v }
         } elseif ($k -eq 'app_escluse') {

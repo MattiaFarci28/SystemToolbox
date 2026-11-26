@@ -293,9 +293,14 @@ $script:TaskRegistry = @(
         param($ctx)
         if ($ctx.DryRun) { $ctx.Note('Cache font: verrebbe rigenerata (simulazione)'); return }
         $stato = Stop-ServiceSet -Names @('FontCache','FontCache3.0.0.0') -Ctx $ctx -TimeoutSec 15
-        Clear-FolderContent -Path (Join-Path $env:WINDIR 'ServiceProfiles\LocalService\AppData\Local\FontCache') -Ctx $ctx -Etichetta 'FontCache'
-        Remove-FilePattern -Path (Join-Path $env:WINDIR 'ServiceProfiles\LocalService\AppData\Local') -Filtro 'FontCache*.dat' -Ctx $ctx -Etichetta 'FontCache*.dat'
-        Restore-ServiceSet -State $stato -Ctx $ctx
+        # finally: i servizi tornano come prima anche se la pulizia
+        # si interrompe per un errore imprevisto.
+        try {
+            Clear-FolderContent -Path (Join-Path $env:WINDIR 'ServiceProfiles\LocalService\AppData\Local\FontCache') -Ctx $ctx -Etichetta 'FontCache'
+            Remove-FilePattern -Path (Join-Path $env:WINDIR 'ServiceProfiles\LocalService\AppData\Local') -Filtro 'FontCache*.dat' -Ctx $ctx -Etichetta 'FontCache*.dat'
+        } finally {
+            Restore-ServiceSet -State $stato -Ctx $ctx
+        }
     }
 },
 
@@ -370,11 +375,16 @@ $script:TaskRegistry = @(
             Stop-Process -Name explorer -Force -ErrorAction SilentlyContinue
             Start-Sleep -Seconds 2
         }
-        Remove-FilePattern -Path $cartella -Filtro 'thumbcache_*.db' -Ctx $ctx -Etichetta 'Miniature'
-        Remove-FilePattern -Path $cartella -Filtro 'iconcache_*.db'  -Ctx $ctx -Etichetta 'Icone'
-        if ($explorerAttivo -and -not (Get-Process -Name explorer -ErrorAction SilentlyContinue)) {
-            Start-Process explorer.exe
-            $ctx.Note('Esplora risorse riavviato')
+        # finally: senza Esplora risorse spariscono desktop e barra delle
+        # applicazioni. Va riavviato anche se la pulizia si interrompe.
+        try {
+            Remove-FilePattern -Path $cartella -Filtro 'thumbcache_*.db' -Ctx $ctx -Etichetta 'Miniature'
+            Remove-FilePattern -Path $cartella -Filtro 'iconcache_*.db'  -Ctx $ctx -Etichetta 'Icone'
+        } finally {
+            if ($explorerAttivo -and -not (Get-Process -Name explorer -ErrorAction SilentlyContinue)) {
+                Start-Process explorer.exe
+                $ctx.Note('Esplora risorse riavviato')
+            }
         }
     }
 },
@@ -395,9 +405,14 @@ $script:TaskRegistry = @(
         }
         $ctx.Note('Arresto dei servizi di aggiornamento...')
         $stato = Stop-ServiceSet -Names $servizi -Ctx $ctx -TimeoutSec 20
-        Clear-FolderContent -Path (Join-Path $env:WINDIR 'SoftwareDistribution\Download') -Ctx $ctx -Etichetta 'SoftwareDistribution\Download'
-        $ctx.Note('Ripristino dello stato dei servizi...')
-        Restore-ServiceSet -State $stato -Ctx $ctx
+        # finally: Windows Update non deve mai restare fermo, nemmeno
+        # se la pulizia si interrompe per un errore imprevisto.
+        try {
+            Clear-FolderContent -Path (Join-Path $env:WINDIR 'SoftwareDistribution\Download') -Ctx $ctx -Etichetta 'SoftwareDistribution\Download'
+        } finally {
+            $ctx.Note('Ripristino dello stato dei servizi...')
+            Restore-ServiceSet -State $stato -Ctx $ctx
+        }
     }
 },
 @{
@@ -467,13 +482,17 @@ $script:TaskRegistry = @(
                 foreach ($pk in (Get-ChildItem -LiteralPath $pacchetti -Directory -ErrorAction SilentlyContinue)) {
                     $cache = Join-Path $pk.FullName 'AC\INetCache'
                     if (Test-Path -LiteralPath $cache -ErrorAction SilentlyContinue) {
+                        # Stesso controllo di Clear-FolderContent: mai
+                        # svuotare una cartella raggiunta da un collegamento.
+                        if (Test-PercorsoConCollegamento -Path $cache) { continue }
                         $prima = Measure-FolderBytes $cache
                         if ($prima -le 0) { continue }
                         if ($ctx.DryRun) { $ctx.Bytes += $prima; $n++; continue }
                         Get-ChildItem -LiteralPath $cache -Force -ErrorAction SilentlyContinue | ForEach-Object {
                             if (Remove-AlberoSicuro -Voce $_) { $ctx.Items++ } else { $ctx.Skipped++ }
                         }
-                        $ctx.Bytes += ($prima - (Measure-FolderBytes $cache))
+                        # L'app puo' riscrivere mentre si pulisce: mai sottrarre.
+                        $ctx.Bytes += [math]::Max([long]0, $prima - (Measure-FolderBytes $cache))
                         $n++
                     }
                 }
