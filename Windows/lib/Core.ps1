@@ -304,13 +304,20 @@ function Test-RebootPending {
 
 function New-RestorePoint {
     param([string]$Descrizione = 'System Toolbox - prima della manutenzione')
+    # Windows crea al massimo un punto di ripristino ogni 24 ore. La
+    # documentazione Microsoft lo descrive come un errore ("...within
+    # the past 24 hours"), ma alcune versioni lo segnalano solo come
+    # avviso, e senza leggere gli avvisi si direbbe "creato" anche
+    # quando non lo e'. Per questo si raccolgono anche gli avvisi.
+    $avvisi = $null
     try {
-        Checkpoint-Computer -Description $Descrizione -RestorePointType 'MODIFY_SETTINGS' -ErrorAction Stop
+        Checkpoint-Computer -Description $Descrizione -RestorePointType 'MODIFY_SETTINGS' -ErrorAction Stop `
+            -WarningAction SilentlyContinue -WarningVariable avvisi
+        if ($avvisi) { throw ([string]$avvisi[0]) }
         return [pscustomobject]@{ Ok = $true; Messaggio = 'Punto di ripristino creato.' }
     } catch {
         $m = $_.Exception.Message
-        # Windows limita di default a un punto di ripristino ogni 24 ore.
-        if ($m -match '1440|frequen') {
+        if ($m -match '24|1440|frequen') {
             $m = 'Esiste gia'' un punto di ripristino recente (limite di 24 ore di Windows).'
         }
         return [pscustomobject]@{ Ok = $false; Messaggio = $m }

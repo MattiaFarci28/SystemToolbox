@@ -158,13 +158,17 @@ $script:TaskRegistry = @(
     Nome      = 'Cestino (tutti i dischi)'
     Categoria = 'Pulizia'
     Livello   = 'Sicuro'
-    Descrizione = 'Svuota il cestino con l''API di Windows, senza cancellare la cartella di sistema.'
+    Descrizione = 'Svuota il cestino dell''utente corrente su tutti i dischi, con l''API di Windows, senza cancellare la cartella di sistema.'
     Azione = {
         param($ctx)
         $dischi = @(Get-CimInstance -ClassName Win32_LogicalDisk -Filter 'DriveType=3' -ErrorAction SilentlyContinue)
+        # Clear-RecycleBin svuota solo il cestino dell'utente corrente
+        # (documentazione Microsoft): si misura quindi solo la sua
+        # cartella, $Recycle.Bin\<SID>, non quelle degli altri utenti.
+        $sid = [System.Security.Principal.WindowsIdentity]::GetCurrent().User.Value
         foreach ($d in $dischi) {
             $lettera = $d.DeviceID.TrimEnd(':')
-            $cartella = Join-Path ($d.DeviceID + '\') '$Recycle.Bin'
+            $cartella = Join-Path (Join-Path ($d.DeviceID + '\') '$Recycle.Bin') $sid
             $prima = Measure-FolderBytes $cartella
 
             if ($ctx.DryRun) {
@@ -420,7 +424,7 @@ $script:TaskRegistry = @(
     Nome      = 'Compattazione archivio componenti (DISM)'
     Categoria = 'Pulizia'
     Livello   = 'Avanzato'
-    Descrizione = 'Rimuove le versioni superate dei componenti di Windows. E'' l''operazione che libera piu'' spazio, ma puo'' durare 10-20 minuti e non e'' interrompibile.'
+    Descrizione = 'Rimuove le versioni superate dei componenti di Windows. E'' l''operazione che libera piu'' spazio, ma puo'' durare 10-20 minuti e non e'' interrompibile. Le vecchie versioni vengono cancellate subito, senza i 30 giorni di attesa di Windows.'
     Azione = {
         param($ctx)
         if ($ctx.DryRun) {
@@ -644,8 +648,9 @@ $script:TaskRegistry = @(
     Descrizione = 'Usa netsh invece di "arp -d *", che restituisce codici di errore anche quando funziona.'
     Azione = {
         param($ctx)
-        if ($ctx.DryRun) { $ctx.Note('netsh interface ip delete arpcache (simulazione)'); return }
-        $r = Invoke-Native -File 'netsh.exe' -Arguments @('interface','ip','delete','arpcache') -TimeoutSec 30
+        # Forma "interface ipv4", quella della documentazione Microsoft di netsh.
+        if ($ctx.DryRun) { $ctx.Note('netsh interface ipv4 delete arpcache (simulazione)'); return }
+        $r = Invoke-Native -File 'netsh.exe' -Arguments @('interface','ipv4','delete','arpcache') -TimeoutSec 30
         if ($r.ExitCode -ne 0) {
             $ctx.Note(('netsh ha restituito il codice {0}: normale se la cache era gia'' vuota' -f $r.ExitCode))
         } else {
@@ -743,8 +748,15 @@ $script:TaskRegistry = @(
     Azione = {
         param($ctx)
         if ($ctx.DryRun) { $ctx.Note('netsh int ip reset (simulazione)'); return }
-        $r = Invoke-Native -File 'netsh.exe' -Arguments @('int','ip','reset') -TimeoutSec 90
+        # La guida Microsoft "Reset TCP/IP by using the NetShell utility"
+        # chiede di indicare un file di log: si mette accanto ai log dello
+        # strumento, e resta traccia di cosa e' stato azzerato.
+        $cartellaLog = $env:TEMP
+        if (Get-LogPath) { $cartellaLog = Split-Path -Path (Get-LogPath) -Parent }
+        $logReset = Join-Path $cartellaLog ('netsh-reset-tcpip_{0}.txt' -f (Get-Date -Format 'yyyy-MM-dd_HH-mm-ss'))
+        $r = Invoke-Native -File 'netsh.exe' -Arguments @('int','ip','reset',('"' + $logReset + '"')) -TimeoutSec 90
         if ($r.TimedOut) { $ctx.Fail('netsh int ip reset bloccato'); return }
+        $ctx.Note(('Registro del reset: {0}' -f $logReset))
         # netsh int ip reset restituisce spesso un codice diverso da 0
         # con "Accesso negato" su singole chiavi di registro pur avendo
         # completato il reset. Non e' un errore da segnalare.
@@ -972,12 +984,13 @@ $script:TaskRegistry = @(
             if ($u.TimedOut)          { $ctx.Fail(('{0}: interrotto per timeout' -f $p.Nome)) }
             elseif ($u.ExitCode -eq 0) { $ctx.Items++ }
             elseif ($hex -eq '0x8A15002B') {
-                # "Nessun aggiornamento applicabile": winget vede una versione
-                # piu' nuova ma non puo' installarla sopra quella presente,
-                # di solito perche' e' stata installata da un altro programma.
-                # Non e' un guasto: si salta e si dice come fare.
+                # Tabella ufficiale dei codici di winget:
+                # APPINSTALLER_CLI_ERROR_UPDATE_NOT_APPLICABLE, "No applicable
+                # update found". winget elenca una versione piu' nuova ma non
+                # ha un aggiornamento che possa applicare a questa
+                # installazione. Non e' un guasto: si salta e si dice come fare.
                 $ctx.Skipped++
-                $ctx.Note(('{0}: winget non puo'' aggiornarla (installata in altro modo): si aggiorna dal programma stesso o dal sito del produttore' -f $p.Nome))
+                $ctx.Note(('{0}: winget non ha un aggiornamento applicabile a questa installazione: si aggiorna dal programma stesso o dal sito del produttore' -f $p.Nome))
             }
             else { $ctx.Fail(('{0}: winget ha restituito il codice {1}' -f $p.Nome, $hex)) }
         }

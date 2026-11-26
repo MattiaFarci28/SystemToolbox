@@ -173,7 +173,7 @@ Copia `toolbox.conf.esempio` in `toolbox.conf`.
 | `notifica_fine` | si | notifica quando finisce |
 | `ridimensiona_terminale` | no | `si` ridimensiona la finestra all'avvio |
 | `backup_avviso_giorni` | 7 | giorni oltre cui un backup è considerato vecchio |
-| `app_escluse` | (vuoto) | programmi di Homebrew da non aggiornare |
+| `app_escluse` | (vuoto) | programmi di Homebrew da non aggiornare (vedi sotto) |
 
 Non usate su macOS: `ram_critica` (conta lo swap), `avanzamento` (esiste solo su Linux), `lingua`.
 
@@ -186,6 +186,8 @@ Non usate su macOS: `ram_critica` (conta lo swap), `avanzamento` (esiste solo su
 - Se macOS blocca il file perché "scaricato da Internet": clic destro, **Apri**.
 - In modalità automatica la notifica compare solo se ci sono problemi **nuovi** rispetto all'esecuzione precedente.
 - Per leggere la data dell'ultimo backup di Time Machine può servire collegare il disco di backup.
+- `app_escluse` ferma un programma quando lo strumento aggiorna gli altri. Homebrew però aggiorna
+  anche i programmi che dipendono da quelli aggiornati: per bloccarne uno del tutto serve `brew pin nome`.
 
 ## Collaudo
 

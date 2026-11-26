@@ -106,7 +106,7 @@ Lavora solo nella tua cartella personale. Si toglie con `./installa-scorciatoie.
 | avanzato | Aggiornamento completo | 15 min | **può rimuovere pacchetti**: le rimozioni sono mostrate a parte |
 | avanzato | Aggiorna gli snap | 5 min | |
 | avanzato | Aggiorna le app Flatpak | 5 min | |
-| avanzato | Ripara i pacchetti danneggiati | 2 min | |
+| avanzato | Ripara i pacchetti danneggiati | 2 min | non rimuove mai pacchetti: se servirebbe, si ferma e li elenca |
 | sicuro | TRIM del disco | 1 min | solo SSD, non è una deframmentazione |
 | avanzato | Correggi `pam_lastlog` obsoleto | 10 s | controlla prima e fa una copia di sicurezza |
 
@@ -158,9 +158,11 @@ compare un avviso prima che lo stato SMART diventi critico.
 | Pulizia cache pacchetti | ✓ | ✓ | ✓ | ✓ |
 | Aggiornamenti | ✓ | ✓ | ✓ | ✓ |
 | Rimozione pacchetti orfani | ✓ | ✓ | ✓ | |
-| Riparazione pacchetti | ✓ | ✓ | ✓ | ✓ |
+| Riparazione pacchetti | ✓ | solo controllo | solo controllo | solo controllo |
 | Conteggio aggiornamenti di sicurezza | ✓ | ✓ | | ✓ |
 | Rimozione kernel vecchi | ✓ | | | |
+
+Su openSUSE l'aggiornamento completo va lanciato a mano (`sudo zypper dist-upgrade`), per leggere prima cosa rimuove.
 
 Solo APT è stato provato. DNF, pacman e zypper sono scritti ma mai eseguiti.
 
@@ -203,7 +205,7 @@ Non usate su Linux: `avvii_avviso` (conta il tempo di avvio), `app_escluse` (i p
 bash test/collaudo.sh
 ```
 
-164 controlli, non toccano il sistema.
+170 controlli, non toccano il sistema.
 Lo strumento è stato provato anche su un PC Ubuntu reale. DNF, pacman e zypper non sono ancora stati provati.
 
 ## File

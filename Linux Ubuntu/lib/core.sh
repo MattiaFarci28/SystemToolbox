@@ -185,7 +185,11 @@ pkg_aggiorna_indice() {
     case "$TB_PKG" in
         apt)    as_root env LC_ALL=C apt-get update >/dev/null 2>&1 ;;
         dnf)    as_root dnf -q makecache >/dev/null 2>&1 ;;
-        pacman) as_root pacman -Sy --noconfirm >/dev/null 2>&1 ;;
+        # pacman: niente "pacman -Sy" da solo. La wiki di Arch lo
+        # sconsiglia (aggiornamenti parziali, non supportati): l'indice
+        # si aggiorna solo insieme ai pacchetti, con "pacman -Syu".
+        # Per l'elenco si usa checkupdates, che non tocca il sistema.
+        pacman) return 0 ;;
         zypper) as_root zypper --non-interactive refresh >/dev/null 2>&1 ;;
         *)      return 1 ;;
     esac
@@ -198,9 +202,12 @@ pkg_aggiorna_indice() {
 pkg_elenco_aggiornabili() {
     case "$TB_PKG" in
         apt)    LC_ALL=C apt-get -s upgrade 2>/dev/null | awk '/^Inst /{print $2}' ;;
-        # check-update esce con 100 quando ci sono aggiornamenti:
-        # non e' un errore, va ignorato.
-        dnf)    LC_ALL=C dnf -q check-update 2>/dev/null | awk 'NF==3 && $1 !~ /^(Last|Obsoleting)/ {print $1}' ;;
+        # dnf5 (Fedora 41 e successive) documenta "check-upgrade"; il
+        # dnf precedente conosce solo "check-update". Esce con 100
+        # quando ci sono aggiornamenti: non e' un errore, va ignorato.
+        dnf)    local cmd=check-update
+                dnf check-upgrade --help >/dev/null 2>&1 && cmd=check-upgrade
+                LC_ALL=C dnf -q "$cmd" 2>/dev/null | awk 'NF==3 && $1 !~ /^(Last|Obsoleting)/ {print $1}' ;;
         pacman) if command -v checkupdates >/dev/null 2>&1; then
                     checkupdates 2>/dev/null | awk '{print $1}'
                 else
@@ -217,9 +224,12 @@ pkg_elenco_aggiornabili() {
 # viene mostrata sempre a parte e mai nascosta dentro un -y.
 pkg_elenco_rimossi_completo() {
     case "$TB_PKG" in
-        apt)    LC_ALL=C apt-get -s full-upgrade 2>/dev/null | awk '/^Remv /{print $2}' ;;
+        apt)    LC_ALL=C apt-get -s full-upgrade 2>/dev/null | awk '/^(Remv|Purg) /{print $2}' ;;
         dnf)    LC_ALL=C dnf -q --assumeno distro-sync 2>/dev/null | awk '/^Removing/{f=1;next} /^$/{f=0} f{print $1}' ;;
-        pacman) echo "" ;;   # pacman -Syu non rimuove pacchetti da solo
+        pacman) echo "" ;;   # pacman -Syu non toglie pacchetti senza un sostituto
+        # zypper dist-upgrade puo' rimuovere pacchetti, ma qui non si
+        # sa ancora leggerne l'anteprima: task_maint_dist_upgrade non
+        # lo esegue da solo (vedi li').
         zypper) echo "" ;;
         *)      return 1 ;;
     esac
@@ -227,9 +237,12 @@ pkg_elenco_rimossi_completo() {
 }
 
 # Pacchetti orfani, cioe' dipendenze rimaste senza chi le usava.
+# Nella simulazione apt scrive "Remv" per una rimozione e "Purg"
+# quando si toglie anche la configurazione, come con --purge: vanno
+# lette entrambe, altrimenti l'elenco risulta sempre vuoto.
 pkg_elenco_orfani() {
     case "$TB_PKG" in
-        apt)    LC_ALL=C apt-get -s autoremove --purge 2>/dev/null | awk '/^Remv /{print $2}' ;;
+        apt)    LC_ALL=C apt-get -s autoremove --purge 2>/dev/null | awk '/^(Remv|Purg) /{print $2}' ;;
         dnf)    dnf -q repoquery --unneeded 2>/dev/null ;;
         pacman) pacman -Qtdq 2>/dev/null ;;
         zypper) LC_ALL=C zypper -q packages --unneeded 2>/dev/null | awk -F'|' '/^i/{gsub(/ /,"",$3); print $3}' ;;
@@ -264,7 +277,8 @@ pkg_esegui_upgrade() {
     case "$TB_PKG" in
         apt)    as_root env LC_ALL=C apt-get upgrade -y ;;
         dnf)    as_root env LC_ALL=C dnf -y upgrade ;;
-        pacman) as_root pacman -Su --noconfirm ;;
+        # -Syu e non -Su: indice e pacchetti insieme (vedi pkg_aggiorna_indice).
+        pacman) as_root pacman -Syu --noconfirm ;;
         zypper) as_root zypper --non-interactive update ;;
         *)      return 1 ;;
     esac
@@ -280,13 +294,55 @@ pkg_esegui_upgrade_completo() {
     esac
 }
 
+# Ripara le installazioni rimaste a meta' SENZA mai rimuovere
+# pacchetti di nascosto. Se per riparare servirebbe togliere
+# qualcosa, non lo fa: stampa cosa resta da sistemare, una riga
+# per voce, e chi lo chiama lo mostra.
+# Restituisce 0 se non resta niente, 1 se serve un intervento a mano.
 pkg_ripara() {
+    local out
     case "$TB_PKG" in
-        apt)    as_root dpkg --configure -a >/dev/null 2>&1
-                as_root env LC_ALL=C apt-get --fix-broken install -y >/dev/null 2>&1 ;;
-        dnf)    as_root dnf -y --best --allowerasing distro-sync >/dev/null 2>&1 ;;
-        pacman) as_root pacman -Syu --noconfirm >/dev/null 2>&1 ;;
-        zypper) as_root zypper --non-interactive verify >/dev/null 2>&1 ;;
+        apt)
+            # Completa le configurazioni interrotte: non rimuove niente.
+            as_root dpkg --configure -a >/dev/null 2>&1
+            # Prova generale (-s). Il manuale di apt-get avverte che
+            # --fix-broken "puo' omettere qualsiasi pacchetto", e -y si
+            # ferma solo davanti ai pacchetti essenziali: quindi prima
+            # si guarda, e se cadrebbe qualcosa ci si ferma.
+            if ! out=$(LC_ALL=C apt-get -s --fix-broken install 2>/dev/null); then
+                echo "apt non trova da solo una soluzione: serve un intervento a mano"
+                return 1
+            fi
+            out=$(printf '%s\n' "$out" | awk '/^(Remv|Purg) /{print $2}')
+            if [ -n "$out" ]; then
+                echo "Per riparare, apt rimuoverebbe questi pacchetti:"
+                printf '%s\n' "$out" | head -12 | sed 's/^/   /'
+                echo "Se l'elenco va bene: sudo apt-get --fix-broken install"
+                return 1
+            fi
+            as_root env LC_ALL=C apt-get --fix-broken install -y >/dev/null 2>&1 ;;
+        dnf)
+            # Solo controllo: le opzioni di riparazione di dnf
+            # (distro-sync --allowerasing) possono rimuovere pacchetti
+            # o tornare a versioni precedenti.
+            out=$(LC_ALL=C dnf -q check 2>&1)
+            [ -z "$out" ] && return 0
+            printf '%s\n' "$out" | head -12
+            return 1 ;;
+        pacman)
+            # Solo controllo: pacman -Dk verifica dipendenze e conflitti
+            # del database locale senza toccare niente.
+            out=$(LC_ALL=C pacman -Dk 2>&1) && return 0
+            printf '%s\n' "$out" | head -12
+            return 1 ;;
+        zypper)
+            # Solo prova (--dry-run): verify senza questa opzione,
+            # in modalita' non interattiva, installerebbe o
+            # rimuoverebbe pacchetti da solo.
+            out=$(LC_ALL=C zypper --non-interactive verify --dry-run 2>&1)
+            case "$out" in *"Dependencies of all installed packages are satisfied"*) return 0 ;; esac
+            printf '%s\n' "$out" | tail -12
+            return 1 ;;
         *)      return 1 ;;
     esac
     return $?

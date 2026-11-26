@@ -24,7 +24,7 @@ clean_apt_autoremove|Pacchetti non piu' necessari|Pulizia|avanzato|60|1|0|Rimuov
 clean_snap_old|Revisioni snap superate|Pulizia|avanzato|90|1|0|Snap conserva le versioni precedenti di ogni pacchetto: spesso vale diversi GB. Le versioni in uso non vengono toccate.
 clean_kernels|Kernel vecchi|Pulizia|avanzato|90|1|0|Rimuove i kernel inutilizzati mantenendo quello in uso e il piu' recente. Libera /boot, che e' una partizione piccola e si riempie in fretta.
 clean_flatpak|Runtime Flatpak inutilizzati|Pulizia|avanzato|60|0|0|Rimuove i runtime non piu' richiesti da nessuna applicazione.
-clean_docker|Spazio di Docker|Pulizia|avanzato|90|0|0|Rimuove immagini, contenitori e volumi non utilizzati. Da eseguire solo se sai cosa hai in Docker.
+clean_docker|Spazio di Docker|Pulizia|avanzato|90|0|0|Rimuove i contenitori fermi, le reti non usate, le immagini senza nome e la cache di compilazione. I volumi non vengono toccati. Da eseguire solo se sai cosa hai in Docker.
 clean_devcache|Cache degli strumenti di sviluppo|Pulizia|avanzato|60|0|0|Cache di npm, pip, Yarn e Gradle. Sono pacchetti riscaricabili.
 net_flushdns|Svuota la cache DNS|Rete|sicuro|10|1|0|Elimina le risoluzioni memorizzate da systemd-resolved.
 net_renew|Rinnova indirizzo IP|Rete|sicuro|30|1|0|Richiede di nuovo l'indirizzo al router sull'interfaccia attiva.
@@ -370,12 +370,23 @@ task_clean_kernels() {
         ctx_fail "La prova di rimozione non e' riuscita: nessun kernel toccato"
         return 0
     fi
-    for p in $(printf '%s\n' "$sim" | awk '/^Purg /{print $2}'); do
+    # Nella simulazione apt scrive "Purg" o "Remv" per ogni pacchetto
+    # che toglierebbe (il manuale documenta solo "Remv"): si leggono
+    # entrambe.
+    local tolti
+    tolti=$(printf '%s\n' "$sim" | awk '/^(Remv|Purg) /{print $2}')
+    for p in $tolti; do
         ok=0
         for k in $lista; do
             case "$p" in *"${k#linux-image-}") ok=1; break ;; esac
         done
         [ "$ok" -eq 1 ] || fuori="$fuori $p"
+    done
+    # Nel dubbio ci si ferma: se un kernel scelto non compare fra
+    # quelli che apt toglierebbe, la simulazione non e' stata
+    # capita, e procedere sarebbe andare alla cieca.
+    for k in $lista; do
+        printf '%s\n' "$tolti" | grep -qxF -- "$k" || fuori="$fuori (simulazione non riconosciuta per $k)"
     done
     if [ -n "$fuori" ]; then
         ctx_fail "Verrebbero rimossi anche altri pacchetti:$fuori. Nessun kernel toccato: rimuovili a mano se sei sicuro"
@@ -470,12 +481,22 @@ task_net_renew() {
     # Si usa chi gestisce davvero la rete. Un indirizzo impostato
     # a mano non viene mai sostituito con uno DHCP.
     if command -v nmcli >/dev/null 2>&1 && nmcli -t -f RUNNING general 2>/dev/null | grep -q running; then
-        # reapply rilegge la configurazione; se non basta, si
-        # riconnette l'interfaccia (cade per un paio di secondi).
-        if ! as_root nmcli device reapply "$iface" >/dev/null 2>&1; then
-            as_root nmcli device disconnect "$iface" >/dev/null 2>&1
-            as_root nmcli device connect "$iface" >/dev/null 2>&1
-        fi
+        # Si riattiva la connessione gia' attiva sull'interfaccia,
+        # indicata per UUID: e' la stessa, non una scelta da
+        # NetworkManager. La riattivazione rifa' la richiesta DHCP;
+        # una connessione con indirizzo fisso resta com'e'. La rete
+        # cade per un paio di secondi.
+        # (Prima si usava "device reapply", che secondo il manuale
+        # applica solo le modifiche alla configurazione: non rinnova.)
+        local uuid
+        uuid=$(nmcli -g GENERAL.CON-UUID device show "$iface" 2>/dev/null)
+        case "$uuid" in
+            ''|*[!0-9a-fA-F-]*)
+                ctx_fail "Nessuna connessione attiva riconosciuta su $iface"
+                return 0 ;;
+        esac
+        as_root nmcli connection up uuid "$uuid" >/dev/null 2>&1 || \
+            ctx_fail "NetworkManager non ha potuto riattivare la connessione"
     elif systemctl is-active --quiet systemd-networkd 2>/dev/null && command -v networkctl >/dev/null 2>&1; then
         # renew agisce solo se l'interfaccia usa DHCP.
         as_root networkctl renew "$iface" >/dev/null 2>&1
@@ -548,6 +569,12 @@ task_maint_upgrade() {
 
 task_maint_dist_upgrade() {
     pkg_presente || { ctx_note "Nessun gestore pacchetti riconosciuto"; return 0; }
+    # zypper dist-upgrade puo' rimuovere pacchetti e qui non si sa
+    # ancora mostrarne l'elenco prima: non lo si esegue alla cieca.
+    if [ "$TB_PKG" = "zypper" ]; then
+        ctx_note "Su openSUSE l'aggiornamento completo va lanciato a mano, per leggere l'elenco: sudo zypper dist-upgrade"
+        return 0
+    fi
     if [ "$TB_DRYRUN" -eq 0 ]; then
         ctx_note "Aggiornamento dell'elenco pacchetti..."
         pkg_aggiorna_indice || ctx_fail "L'aggiornamento dell'elenco pacchetti ha restituito un errore"
@@ -643,10 +670,14 @@ task_maint_fix_broken() {
         ctx_note "Riparazione delle installazioni interrotte con $TB_PKG_NOME (simulazione)"
         return 0
     fi
-    if pkg_ripara; then
+    local out riga
+    if out=$(pkg_ripara); then
         ctx_note "Nessuna dipendenza rotta rimasta"
     else
-        ctx_fail "Restano dipendenze non risolvibili automaticamente"
+        ctx_fail "Restano problemi da risolvere a mano: nessun pacchetto e' stato rimosso"
+        printf '%s\n' "$out" | while IFS= read -r riga; do
+            [ -n "$riga" ] && ctx_note "   $riga"
+        done
     fi
     return 0
 }

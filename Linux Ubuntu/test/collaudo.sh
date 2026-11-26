@@ -697,6 +697,34 @@ apt-get() { printf 'Purg linux-image-6.8.0-40-generic [x]\nPurg linux-modules-ex
 K_ESEGUITO=""; ctx_reset; task_clean_kernels >/dev/null 2>&1
 check "rimuove solo il kernel vecchio" "$K_ESEGUITO" "env LC_ALL=C apt-get purge -y linux-image-6.8.0-40-generic"
 
+# Simulazione in un formato non riconosciuto: nel dubbio ci si ferma.
+apt-get() { printf 'Qualcosa di diverso linux-image-6.8.0-40-generic\n'; }
+K_ESEGUITO=""; ctx_reset; task_clean_kernels >/dev/null 2>&1
+check "simulazione non capita: nessun kernel toccato" "$K_ESEGUITO" ""
+
+# Orfani: apt scrive "Purg" con --purge, va letto come "Remv".
+TB_PKG=apt
+apt-get() { printf 'Purg libvecchia1 [1.0]\nRemv libvecchia2 [2.0]\nInst altro [3.0]\n'; }
+check "orfani: lette sia Purg sia Remv" "$(pkg_elenco_orfani | tr '\n' ' ')" "libvecchia1 libvecchia2 "
+
+# Ripara: se per riparare apt toglierebbe pacchetti, ci si ferma.
+apt-get() { printf 'Remv programma-utile [1.0]\nInst altro [2.0]\n'; }
+as_root() { case "$*" in *fix-broken*) K_ESEGUITO="$*" ;; esac; }
+K_ESEGUITO=""
+R_OUT=$(pkg_ripara); R_ESITO=$?
+check "ripara: si ferma se rimuoverebbe pacchetti" "$R_ESITO|$K_ESEGUITO" "1|"
+case "$R_OUT" in *programma-utile*) ok "ripara: mostra cosa verrebbe rimosso" ;; *) ko "ripara: elenco delle rimozioni non mostrato" ;; esac
+# Nessuna rimozione prevista: la riparazione procede.
+apt-get() { printf 'Inst manca [1.0]\nConf manca [1.0]\n'; }
+K_ESEGUITO=""; pkg_ripara >/dev/null; R_ESITO=$?
+check "ripara: procede se non rimuove niente" "$R_ESITO|$K_ESEGUITO" "0|env LC_ALL=C apt-get --fix-broken install -y"
+
+# Snap: solo le revisioni con "disabled" nella colonna Notes.
+_k_pf="$(declare -f prefetch_get)"
+prefetch_get() { printf 'Name Version Rev Tracking Publisher Notes\ncore22 1 1564 latest/stable canonical** base,disabled\ncore22 1 1621 latest/stable canonical** base\nnotdisabled-app 1 5 latest/stable x -\n'; }
+check "snap: solo le revisioni disabilitate" "$(snap_revisioni_superate | tr '\n' ' ')" "core22|1564 "
+eval "$_k_pf"
+
 unset -f uname dpkg apt-get
 eval "$_k_orig"; TB_PKG=$_k_pkg
 

@@ -82,7 +82,7 @@ La finestra ricorda dimensione e ultima selezione, e segue il tema chiaro o scur
 | sicuro | Temp utente corrente | 20 s | |
 | sicuro | Temp di sistema | 15 s | `C:\Windows\Temp` |
 | sicuro | Temp e cache di tutti i profili | 30 s | esclusi i profili di servizio |
-| sicuro | Cestino (tutti i dischi) | 15 s | |
+| sicuro | Cestino (tutti i dischi) | 15 s | dell'utente che avvia lo strumento |
 | sicuro | Segnalazioni errori (WER) | 5 s | |
 | sicuro | Dump di crash e minidump | 5 s | |
 | sicuro | Cache Delivery Optimization | 10 s | |
@@ -199,7 +199,7 @@ Copia `Toolbox.conf.esempio` in `Toolbox.conf`.
 powershell -ExecutionPolicy Bypass -File "test\Collaudo.ps1"
 ```
 
-102 controlli. Non toccano il sistema: usano cartelle e una chiave di registro di prova, poi rimosse.
+105 controlli. Non toccano il sistema: usano cartelle e una chiave di registro di prova, poi rimosse.
 Lo strumento è stato provato anche su un PC Windows reale.
 
 ## File

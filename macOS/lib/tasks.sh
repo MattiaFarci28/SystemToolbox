@@ -32,7 +32,7 @@ clean_snapshots|Snapshot locali Time Machine|Pulizia|avanzato|90|1|0|Elimina le 
 clean_xcode|Xcode - DerivedData e simulatori|Pulizia|avanzato|120|0|0|Rimuove i dati di compilazione e i simulatori non piu' disponibili. Si rigenerano alla compilazione successiva, che sara' piu' lenta.
 clean_devcache|Cache degli strumenti di sviluppo|Pulizia|avanzato|90|0|0|Cache di npm, pip, Yarn e CocoaPods. Sono pacchetti riscaricabili.
 clean_homebrew|Cache di Homebrew|Pulizia|avanzato|60|0|0|Esegue brew cleanup: rimuove versioni vecchie di formule e archivi scaricati.
-clean_docker|Spazio di Docker|Pulizia|avanzato|90|0|0|Rimuove immagini, contenitori e volumi non utilizzati. Va eseguito solo se sai cosa hai in Docker.
+clean_docker|Spazio di Docker|Pulizia|avanzato|90|0|0|Rimuove i contenitori fermi, le reti non usate, le immagini senza nome e la cache di compilazione. I volumi non vengono toccati. Da eseguire solo se sai cosa hai in Docker.
 clean_fontcache|Cache dei font|Pulizia|avanzato|30|1|0|Ricostruisce la cache dei caratteri. Utile quando il testo appare corrotto o i font non compaiono nelle app.
 net_flushdns|Svuota la cache DNS|Rete|sicuro|10|1|0|Elimina le risoluzioni memorizzate. Reversibile e istantaneo: da provare quando un sito non si apre ma la rete funziona.
 net_renew|Rinnova indirizzo IP (DHCP)|Rete|sicuro|25|1|0|Richiede di nuovo l'indirizzo al router sull'interfaccia attiva.

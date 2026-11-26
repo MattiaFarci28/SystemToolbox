@@ -77,7 +77,7 @@ Copialo togliendo `.esempio` e modifica le soglie. Il file viene solo letto, mai
 | Linguaggio | PowerShell 5.1 | bash 3.2 | bash 4+ |
 | Interfaccia | finestra grafica + menu testuale | menu testuale + app per il Dock | menu testuale + finestre zenity |
 | Operazioni | 29 | 23 | 21 |
-| Controlli di collaudo | 102 | 146 | 164 |
+| Controlli di collaudo | 105 | 146 | 170 |
 
 ## Cosa non fa
 
@@ -122,6 +122,9 @@ test/            suite di collaudo
 **Aggiungere un'operazione:** una voce nel registro (`lib/tasks.sh` o `lib\Tasks.ps1`)
 e una funzione che la esegue. Dentro la funzione si usa `ctx_note` per le informazioni
 e `ctx_fail` per i problemi. Tempi, log ed esito li gestisce il motore.
+
+**Fonti:** ogni comando di sistema si verifica solo sulla documentazione ufficiale.
+L'elenco, con i link, è in [FONTI.md](FONTI.md).
 
 **Da aggiornare quando escono nuove versioni dei sistemi operativi:**
 `$script:CicloDiVita` in `Windows/lib/Analysis.ps1`, `macos_eol()` e `ubuntu_eol()`

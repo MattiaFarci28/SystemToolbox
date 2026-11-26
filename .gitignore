@@ -22,3 +22,7 @@ System Toolbox.app/
 Thumbs.db
 desktop.ini
 .DS_Store
+
+# Manuali dei comandi copiati da un Mac per la verifica: sono testi
+# di Apple, servono solo in locale e non vanno pubblicati
+man-macos/

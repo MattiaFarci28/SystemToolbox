@@ -686,7 +686,11 @@ snap_revisioni_superate() {
     local out
     out=$(prefetch_get snap_all 15)
     [ -z "$out" ] && out=$(snap list --all 2>/dev/null)
-    printf '%s\n' "$out" | awk '/disabled/{print $1"|"$3}'
+    # Colonne di "snap list --all": Name Version Rev Tracking Publisher
+    # Notes. "disabled" va cercato solo nell'ultima colonna (Notes, per
+    # esempio "disabled" o "disabled,classic"): cercarlo in tutta la
+    # riga prenderebbe anche uno snap che ha "disabled" nel nome.
+    printf '%s\n' "$out" | awk 'NR > 1 && $NF ~ /(^|,)disabled(,|$)/ {print $1"|"$3}'
     return 0
 }
 

@@ -457,6 +457,25 @@ Check 'il thread di lavoro esegue la diagnosi' ($sorgGui -match "elseif \(\`$mod
 Check 'categoria Aggiornamenti nell''elenco' ($sorgGui -match "@\('Pulizia','Rete','Manutenzione','Aggiornamenti'\)") $true
 
 # ------------------------------------------------------------
+Titolo 'Punto di ripristino'
+# Checkpoint-Computer finto: nessun punto di ripristino vero viene creato.
+function Checkpoint-Computer {
+    # Sostituire il comando vero e' lo scopo: cosi' il collaudo non crea punti di ripristino.
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidOverwritingBuiltInCmdlets', '')]
+    [CmdletBinding()] param($Description, $RestorePointType)
+    Write-Warning 'A new system restore point cannot be created because one has already been created within the past 1440 minutes.'
+}
+$rp = New-RestorePoint
+Check 'con un avviso di Windows non dice "creato"' $rp.Ok $false
+Check 'spiega il limite delle 24 ore' ($rp.Messaggio -match '24 ore') $true
+function Checkpoint-Computer {
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidOverwritingBuiltInCmdlets', '')]
+    [CmdletBinding()] param($Description, $RestorePointType)
+}
+Check 'senza avvisi risulta creato' (New-RestorePoint).Ok $true
+Remove-Item -Path Function:\Checkpoint-Computer
+
+# ------------------------------------------------------------
 Write-Host ''
 Write-Host '============================================'
 Write-Host ("  superati: $script:Pass    falliti: $script:Fail")
