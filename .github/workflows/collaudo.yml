@@ -41,6 +41,16 @@ jobs:
           "Segnalazioni: $($r.Count)"
           if ($r.Count -gt 0) { exit 1 }
 
+      # Lo strumento vero, senza simulazione: la macchina di GitHub
+      # viene buttata via dopo la prova. Lo script si rifiuta di
+      # partire fuori da GitHub Actions.
+      - name: Operazioni vere
+        shell: powershell
+        timeout-minutes: 60
+        run: |
+          & .\Windows\test\Reale.ps1
+          exit $LASTEXITCODE
+
   macos:
     name: macOS
     runs-on: macos-latest
@@ -53,6 +63,11 @@ jobs:
         working-directory: macOS
         run: /bin/bash test/collaudo.sh
 
+      - name: Operazioni vere
+        working-directory: macOS
+        timeout-minutes: 30
+        run: /bin/bash test/reale.sh
+
   linux:
     name: Linux
     runs-on: ubuntu-latest
@@ -62,6 +77,11 @@ jobs:
       - name: Suite di collaudo
         working-directory: Linux Ubuntu
         run: bash test/collaudo.sh
+
+      - name: Operazioni vere
+        working-directory: Linux Ubuntu
+        timeout-minutes: 30
+        run: bash test/reale.sh
 
       - name: ShellCheck
         run: git ls-files -z '*.sh' '*.command' | xargs -0 shellcheck -S warning
