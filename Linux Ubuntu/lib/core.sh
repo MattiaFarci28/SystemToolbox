@@ -156,7 +156,11 @@ pkg_presente() { [ -n "$TB_PKG" ]; }
 pkg_cache_dir() {
     case "$TB_PKG" in
         apt)    echo "/var/cache/apt/archives" ;;
-        dnf)    echo "/var/cache/dnf" ;;
+        # dnf5 (Fedora 41 e successive) usa /var/cache/libdnf5
+        # (system_cachedir nella documentazione di dnf5); il dnf
+        # precedente usa /var/cache/dnf.
+        dnf)    if [ -d /var/cache/libdnf5 ]; then echo "/var/cache/libdnf5"
+                else echo "/var/cache/dnf"; fi ;;
         pacman) echo "/var/cache/pacman/pkg" ;;
         zypper) echo "/var/cache/zypp/packages" ;;
         *)      echo "" ;;

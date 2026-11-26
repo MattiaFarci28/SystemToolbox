@@ -36,6 +36,7 @@ Qui c'è, per ogni comando, la pagina su cui è stato controllato.
 | `dnf check-upgrade` | aggiornamenti disponibili su Fedora | ✎ | [dnf5 check-upgrade](https://dnf5.readthedocs.io/en/latest/commands/check-upgrade.8.html) |
 | `dnf distro-sync` | aggiornamento completo su Fedora | ✓ | [dnf5 distro-sync](https://dnf5.readthedocs.io/en/latest/commands/distro-sync.8.html) |
 | `dnf repoquery --unneeded` | pacchetti non più necessari | ✓ | [dnf5 repoquery](https://dnf5.readthedocs.io/en/latest/commands/repoquery.8.html) |
+| `/var/cache/libdnf5` | cartella della cache di dnf5 (prima `/var/cache/dnf`) | ✎ | [dnf5.conf, system_cachedir](https://dnf5.readthedocs.io/en/latest/dnf5.conf.5.html) |
 | `zypper verify --dry-run` | controllo delle dipendenze su openSUSE | ✎ | [zypper(8)](https://manpages.opensuse.org/Tumbleweed/zypper/zypper.8.en.html) |
 | `docker system prune -f` | spazio di Docker | ✎ | [docker system prune](https://docs.docker.com/reference/cli/docker/system/prune/) |
 

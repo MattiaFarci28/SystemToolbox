@@ -164,7 +164,8 @@ compare un avviso prima che lo stato SMART diventi critico.
 
 Su openSUSE l'aggiornamento completo va lanciato a mano (`sudo zypper dist-upgrade`), per leggere prima cosa rimuove.
 
-Solo APT è stato provato. DNF, pacman e zypper sono scritti ma mai eseguiti.
+APT è stato provato su un PC reale. DNF e pacman vengono provati a ogni modifica, con i comandi veri,
+in container Fedora e Arch su GitHub. zypper è scritto ma mai eseguito.
 
 ## Configurazione
 
@@ -206,7 +207,8 @@ bash test/collaudo.sh
 ```
 
 175 controlli, non toccano il sistema.
-Lo strumento è stato provato anche su un PC Ubuntu reale. DNF, pacman e zypper non sono ancora stati provati.
+Lo strumento è stato provato anche su un PC Ubuntu reale.
+Su GitHub, `test/distro.sh` esegue i veri apt, dnf e pacman in container Ubuntu, Fedora e Arch.
 
 ## File
 
