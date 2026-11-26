@@ -65,3 +65,43 @@ jobs:
 
       - name: ShellCheck
         run: git ls-files -z '*.sh' '*.command' | xargs -0 shellcheck -S warning
+
+  # Le stesse prove dentro container usa e getta, piu' test/distro.sh,
+  # che esegue DAVVERO il gestore pacchetti di ogni distribuzione:
+  # indice, elenchi, pulizia, riparazione, aggiornamento. Nel container
+  # non c'e' niente da perdere, e cosi' DNF e pacman sono provati per
+  # davvero e non solo scritti. Le immagini sono quelle ufficiali delle
+  # distribuzioni su Docker Hub.
+  distro:
+    name: ${{ matrix.nome }}
+    runs-on: ubuntu-latest
+    container: ${{ matrix.immagine }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - nome: Ubuntu (apt vero)
+            immagine: ubuntu:24.04
+            gestore: apt
+            prepara: apt-get update && apt-get install -y procps iproute2 python3
+          - nome: Fedora (dnf vero)
+            immagine: fedora:latest
+            gestore: dnf
+            prepara: dnf -y install findutils gawk procps-ng iproute hostname diffutils util-linux which python3
+          - nome: Arch (pacman vero)
+            immagine: archlinux:latest
+            gestore: pacman
+            prepara: pacman -Syu --noconfirm --needed gawk findutils procps-ng iproute2 diffutils util-linux which python pacman-contrib
+    steps:
+      - name: Strumenti di base
+        run: ${{ matrix.prepara }}
+
+      - uses: actions/checkout@v5
+
+      - name: Suite di collaudo
+        working-directory: Linux Ubuntu
+        run: bash test/collaudo.sh
+
+      - name: Gestore pacchetti vero
+        working-directory: Linux Ubuntu
+        run: bash test/distro.sh ${{ matrix.gestore }}

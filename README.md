@@ -123,6 +123,8 @@ test/            suite di collaudo
 e una funzione che la esegue. Dentro la funzione si usa `ctx_note` per le informazioni
 e `ctx_fail` per i problemi. Tempi, log ed esito li gestisce il motore.
 
+**Prove su computer veri:** la lista è in [PROVE.md](PROVE.md).
+
 **Fonti:** ogni comando di sistema si verifica solo sulla documentazione ufficiale.
 L'elenco, con i link, è in [FONTI.md](FONTI.md).
 
