@@ -520,9 +520,20 @@ task_maint_launchservices() {
     local out
     if out=$(as_user "$ls" -kill -r -domain local -domain system -domain user 2>&1); then
         ctx_note "Database ricostruito: il menu Apri con non avra' piu' duplicati"
-    else
-        ctx_fail "Ricostruzione non riuscita: $(printf '%s\n' "$out" | grep -m1 '[^[:space:]]')"
+        return 0
     fi
+    # Le versioni recenti di macOS hanno tolto -kill: lsregister stesso
+    # risponde "The -kill option has been removed because it was
+    # dangerous and no longer useful". Li' si rifa' solo la
+    # registrazione delle applicazioni, senza azzerare il database.
+    case "$out" in
+        *"-kill option has been removed"*)
+            if out=$(as_user "$ls" -r -domain local -domain system -domain user 2>&1); then
+                ctx_note "Applicazioni registrate di nuovo (questa versione di macOS non permette piu' di azzerare il database)"
+                return 0
+            fi ;;
+    esac
+    ctx_fail "Ricostruzione non riuscita: $(printf '%s\n' "$out" | grep -m1 '[^[:space:]]')"
     return 0
 }
 

@@ -115,7 +115,22 @@ if [ "${n:-0}" -gt 5 ]; then ok "report HTML con $n sezioni"; else ko "report HT
 
 titolo "Modalita' automatica vera"
 OUT=$(bash "$AVVIO" --auto --report /tmp/tb_reale_auto.html < /dev/null 2>&1); rc=$?
-case "$rc" in 0|1) ok "$AVVIO --auto: uscita $rc" ;; *) ko "$AVVIO --auto: uscita $rc" ;; esac
+# Codici: 0 tutto in ordine, 1 avvisi, 2 criticita'. Il 2 puo' venire
+# dall'analisi (per esempio disco quasi pieno sulla macchina di
+# GitHub) e allora non e' un difetto: conta che nessuna operazione sia
+# FALLITA. In ogni caso si mostrano le righe che hanno dato il 2.
+if printf '%s\n' "$OUT" | grep -q 'FALLITO'; then
+    ko "$AVVIO --auto: operazioni fallite"
+    printf '%s\n' "$OUT" | grep 'FALLITO' | head -5 | sed 's/^/      /'
+else
+    case "$rc" in
+        0|1) ok "$AVVIO --auto: uscita $rc" ;;
+        2)   ok "$AVVIO --auto: uscita 2 (criticita' dell'analisi, righe qui sotto)"
+             printf '%s\n' "$OUT" | grep -F '[X]' | head -8 | sed 's/^/      /' ;;
+        *)   ko "$AVVIO --auto: uscita $rc"
+             printf '%s\n' "$OUT" | tail -15 | sed 's/^/      /' ;;
+    esac
+fi
 if printf '%s\n' "$OUT" | grep -qiE "$ERRORI_SHELL"; then
     ko "$AVVIO --auto: errori della shell nell'output"
     printf '%s\n' "$OUT" | grep -iE "$ERRORI_SHELL" | head -5 | sed 's/^/      /'
