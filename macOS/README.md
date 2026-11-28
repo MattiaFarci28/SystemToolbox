@@ -89,7 +89,7 @@ Se sposti la cartella, rilancia il comando.
 | Livello | Operazione | Tempo | Note |
 |---|---|---|---|
 | sicuro | Svuota la cache DNS | 10 s | |
-| sicuro | Rinnova indirizzo IP | 25 s | |
+| sicuro | Rinnova indirizzo IP | 5 s | apre le Impostazioni sulla procedura di Apple |
 | riavvio | Reset preferenze di rete | 20 s | le reti Wi-Fi salvate vanno reinserite |
 
 ### Manutenzione

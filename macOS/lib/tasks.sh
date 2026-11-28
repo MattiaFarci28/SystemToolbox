@@ -35,7 +35,7 @@ clean_homebrew|Cache di Homebrew|Pulizia|avanzato|60|0|0|Esegue brew cleanup: ri
 clean_docker|Spazio di Docker|Pulizia|avanzato|90|0|0|Rimuove i contenitori fermi, le reti non usate, le immagini senza nome e la cache di compilazione. I volumi non vengono toccati. Da eseguire solo se sai cosa hai in Docker.
 clean_fontcache|Cache dei font|Pulizia|avanzato|30|1|0|Ricostruisce la cache dei caratteri. Utile quando il testo appare corrotto o i font non compaiono nelle app.
 net_flushdns|Svuota la cache DNS|Rete|sicuro|10|1|0|Elimina le risoluzioni memorizzate. Reversibile e istantaneo: da provare quando un sito non si apre ma la rete funziona.
-net_renew|Rinnova indirizzo IP (DHCP)|Rete|sicuro|25|1|0|Richiede di nuovo l'indirizzo al router sull'interfaccia attiva.
+net_renew|Rinnova indirizzo IP (DHCP)|Rete|sicuro|5|0|0|Apre le Impostazioni sulla procedura di Apple per chiedere di nuovo l'indirizzo al router.
 net_reset|Reset preferenze di rete|Rete|riavvio|20|1|1|Azzera la configurazione di rete di macOS facendone prima una copia di sicurezza. Serve a riparare una rete che non funziona, non come manutenzione. Le reti Wi-Fi salvate vanno reinserite.
 maint_launchservices|Ricostruisci il database Apri con|Manutenzione|sicuro|60|0|0|Risolve il menu Apri con pieno di voci duplicate e il Finder lento ad aprire i file.
 maint_verifydisk|Verifica il volume di avvio|Manutenzione|sicuro|180|1|0|Controlla la struttura del file system senza modificarlo. Solo diagnosi.
@@ -441,25 +441,25 @@ task_net_renew() {
         ctx_fail "Nessuna interfaccia di rete predefinita"
         return 0
     fi
-    if [ "$TB_DRYRUN" -eq 1 ]; then
-        ctx_note "ipconfig set $iface DHCP (simulazione)"
-        return 0
-    fi
-    # Solo se l'indirizzo arriva gia' dal router (DHCP). Con un
-    # indirizzo impostato a mano, "ipconfig set DHCP" lo sostituirebbe.
+    # Con un indirizzo impostato a mano non c'e' niente da rinnovare.
     if [ -z "$(ipconfig getpacket "$iface" 2>/dev/null)" ]; then
         ctx_note "$iface non usa DHCP (indirizzo impostato a mano): non toccato"
         return 0
     fi
-    ctx_note "Rinnovo indirizzo su $iface..."
-    as_root ipconfig set "$iface" DHCP 2>/dev/null
-    sleep 3
-    local ip; ip=$(ipconfig getifaddr "$iface" 2>/dev/null)
-    if [ -n "$ip" ]; then
-        ctx_note "Indirizzo attivo: $ip"
-    else
-        ctx_fail "Nessun indirizzo assegnato dopo il rinnovo"
+    # Il rinnovo si fa dalle Impostazioni, come indica Apple:
+    # il manuale di ipconfig(8) dice di usare "ipconfig set" solo
+    # per prove e diagnosi.
+    # https://support.apple.com/guide/mac-help/mchlp1545/mac
+    if [ "$TB_DRYRUN" -eq 1 ]; then
+        ctx_note "Apertura di Impostazioni di Sistema (simulazione)"
+        return 0
     fi
+    if ! open -b com.apple.systempreferences 2>/dev/null; then
+        ctx_fail "Impostazioni di Sistema non si sono aperte"
+        return 0
+    fi
+    ctx_note "Impostazioni di Sistema aperte. Per rinnovare l'indirizzo di $iface:"
+    ctx_note "Rete > servizio in uso > Dettagli > TCP/IP > Rinnova DHCP assegnato > OK"
     return 0
 }
 

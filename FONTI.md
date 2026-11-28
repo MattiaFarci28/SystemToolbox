@@ -66,7 +66,7 @@ l'unica fonte ufficiale è il manuale presente sul Mac (`man nome-comando`).
 | Comando | Uso | Stato | Fonte |
 |---|---|:---:|---|
 | `ipconfig getpacket` | capire se l'interfaccia usa DHCP | ✓ | [ipconfig(8), codice Apple](https://github.com/apple-oss-distributions/bootp/blob/main/ipconfig.tproj/ipconfig.8) |
-| `ipconfig set … DHCP` | rinnova l'indirizzo | ⚠ | lo stesso manuale dice di usare `ipconfig` solo per prove e diagnosi. Procedura ufficiale: [Rinnovare il lease DHCP](https://support.apple.com/guide/mac-help/renew-ip-address-dhcp-server-mac-mchlp1545/mac) |
+| `open -b com.apple.systempreferences` | rinnova l'indirizzo: apre le Impostazioni sulla procedura di Apple, perché il manuale di `ipconfig` riserva `ipconfig set` a prove e diagnosi | ✎ | [Rinnovare l'indirizzo IP dal server DHCP](https://support.apple.com/guide/mac-help/mchlp1545/mac) |
 | `rm` | cancellazione | ✓ | [rm, codice Apple](https://github.com/apple-oss-distributions/file_cmds/blob/main/rm/rm.c) |
 | `softwareupdate -i -a` | aggiornamenti di macOS | ✎ | [Proprietà del volume su Apple Silicon](https://support.apple.com/guide/deployment/use-secure-and-bootstrap-tokens-dep24dbdcf9e/web) |
 | `brew update` / `outdated --quiet` / `upgrade` / `cleanup -s` | Homebrew | ✓ | [brew(1)](https://docs.brew.sh/Manpage) |
@@ -99,7 +99,8 @@ l'unica fonte ufficiale è il manuale presente sul Mac (`man nome-comando`).
 | `winget upgrade` | aggiornamento delle applicazioni | ✓ | [winget upgrade](https://learn.microsoft.com/windows/package-manager/winget/upgrade) |
 | codici di uscita di winget | per esempio `0x8A15002B` | ✎ | [WinGet HRESULT codes](https://github.com/microsoft/winget-cli/blob/master/doc/windows/package-manager/winget/returnCodes.md) |
 | Windows Update Agent (`IUpdateSearcher`) | aggiornamenti di Windows | ✓ | [IUpdateSearcher::Search](https://learn.microsoft.com/windows/win32/api/wuapi/nf-wuapi-iupdatesearcher-search), [OperationResultCode](https://learn.microsoft.com/windows/win32/api/wuapi/ne-wuapi-operationresultcode) |
-| chiavi `StartupApproved` | programmi all'avvio | ⚠ | è il formato che scrive Gestione attività, ma Microsoft non lo documenta |
+| chiavi `StartupApproved` | programmi all'avvio: solo lettura dello stato attivo/spento | ⚠ | è il formato che scrive Gestione attività, ma Microsoft non lo documenta. Per questo non si scrive mai |
+| `ms-settings:startupapps` | accendere e spegnere i programmi all'avvio | ✎ | [Launch Windows Settings](https://learn.microsoft.com/windows/apps/develop/launch/launch-settings) |
 | `PowerShell.BeginStop()` | tempo massimo della ricerca degli aggiornamenti | ✎ | [PowerShell.Stop](https://learn.microsoft.com/dotnet/api/system.management.automation.powershell.stop), [PowerShell.BeginStop](https://learn.microsoft.com/dotnet/api/system.management.automation.powershell.beginstop) |
 | `schtasks /create` | esecuzione automatica | ✓ | [schtasks create](https://learn.microsoft.com/windows-server/administration/windows-commands/schtasks-create) |
 | `Get-NetIPAddress`, `Get-PhysicalDisk`, `Get-CimInstance`, `powercfg /batteryreport`, chiavi del riavvio in sospeso | analisi (sola lettura) | … | |

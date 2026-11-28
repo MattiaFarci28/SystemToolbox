@@ -98,6 +98,10 @@ SENZA_RETURN=$(awk '
 ' lib/tasks.sh | tr '\n' ' ')
 check "ogni operazione termina con return esplicito" "$SENZA_RETURN" ""
 
+# Il manuale di ipconfig(8) lo riserva a prove e diagnosi: il rinnovo
+# dell'indirizzo passa dalle Impostazioni, come indica Apple.
+check "nessun ipconfig set" "$(grep -n 'ipconfig set' lib/*.sh | grep -v ':[0-9]*: *#')" ""
+
 # ------------------------------------------------------------
 titolo "Formattazione (senza awk)"
 check "format_bytes 0"           "$(format_bytes 0)"           "0 B"

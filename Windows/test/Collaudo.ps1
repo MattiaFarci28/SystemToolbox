@@ -420,19 +420,23 @@ $a = Get-ApprovazioneAvvio -Origine 'Common Startup' -Nome 'Prog' -Comando 'Prog
 Check 'cartella di avvio: nome del collegamento' $a.Valore 'Prog.lnk'
 Check 'RunOnce non gestibile' ($null -eq (Get-ApprovazioneAvvio -Origine 'HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\RunOnce' -Nome 'X')) $true
 
-# Giro completo su una chiave di prova: nessun programma vero toccato.
+# Lettura dello stato su una chiave di prova: nessun programma vero toccato.
 $chiaveProva = 'HKCU:\Software\SystemToolboxCollaudo\StartupApproved'
-$voce = [pscustomobject]@{ Nome = 'Prova'; Chiave = $chiaveProva; Valore = 'Prova' }
 try {
-    Set-AvvioAttivo -Voce $voce -Attivo $false
-    Check 'spento' (Get-StatoApprovazione -Chiave $chiaveProva -Valore 'Prova') $false
-    $dati = (Get-ItemProperty -LiteralPath $chiaveProva -Name 'Prova').Prova
-    Check 'formato di Gestione attivita'' (12 byte, ora inclusa)' ('{0}|{1}|{2}' -f $dati.Length, $dati[0], [bool]([BitConverter]::ToInt64($dati, 4))) '12|3|True'
-    Set-AvvioAttivo -Voce $voce -Attivo $true
-    Check 'riacceso' (Get-StatoApprovazione -Chiave $chiaveProva -Valore 'Prova') $true
+    New-Item -Path $chiaveProva -Force | Out-Null
+    New-ItemProperty -LiteralPath $chiaveProva -Name 'Spento' -PropertyType Binary -Value ([byte[]](3,0,0,0,1,2,3,4,5,6,7,8)) -Force | Out-Null
+    New-ItemProperty -LiteralPath $chiaveProva -Name 'Acceso' -PropertyType Binary -Value ([byte[]](2,0,0,0,0,0,0,0,0,0,0,0)) -Force | Out-Null
+    Check 'stato spento letto' (Get-StatoApprovazione -Chiave $chiaveProva -Valore 'Spento') $false
+    Check 'stato acceso letto' (Get-StatoApprovazione -Chiave $chiaveProva -Valore 'Acceso') $true
+    Check 'valore assente: nessuna indicazione' ($null -eq (Get-StatoApprovazione -Chiave $chiaveProva -Valore 'Manca')) $true
 } finally {
     Remove-Item -LiteralPath 'HKCU:\Software\SystemToolboxCollaudo' -Recurse -Force -ErrorAction SilentlyContinue
 }
+# Accendere e spegnere passa dalla pagina documentata delle Impostazioni:
+# nel codice non resta nessuna scrittura nelle chiavi StartupApproved.
+$sorgAvvio = (@('lib\Analysis.ps1', 'lib\GuiUI.ps1', 'Toolbox.ps1') | ForEach-Object { Get-Content -LiteralPath (Join-Path $Radice $_) -Raw }) -join ''
+Check 'nessuna scrittura nel registro di avvio' ($sorgAvvio -match 'Set-AvvioAttivo|New-ItemProperty[^\r\n]*Voce') $false
+Check 'pagina Impostazioni > App > Avvio' ($sorgAvvio -match "Start-Process 'ms-settings:startupapps'") $true
 
 # ------------------------------------------------------------
 Titolo 'Cartelle e file piu'' grandi'

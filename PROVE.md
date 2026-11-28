@@ -28,7 +28,7 @@ Apri `Windows\Toolbox.bat` con doppio clic.
 | W5 | Rilancia la stessa selezione e, durante il lavoro, chiudi la finestra con la X | chiede conferma; la finestra **non** si blocca; si chiude da sola appena finisce l'operazione in corso | |
 | W6 | Durante un'**analisi** guarda il pulsante **Interrompi** | è grigio (non cliccabile) | |
 | W7 | Seleziona **Rete leggera** → **Esegui** | la rete cade per un istante e torna; esito OK | |
-| W8 | **Programmi all'avvio**: spegni un programma poco importante, poi riaccendilo | in Gestione attività → Avvio lo stato cambia di conseguenza | |
+| W8 | **Programmi all'avvio** (pulsante in alto e tasto V) | si apre Impostazioni → App → Avvio; nella console l'elenco mostra lo stesso stato attivo/spento di quella pagina | |
 | W9 | Con **Simulazione** spuntata, seleziona **Aggiorna le applicazioni (winget)** → **Esegui** | compare l'elenco delle applicazioni da aggiornare, senza installare niente | |
 
 ---
@@ -41,7 +41,7 @@ Nel Terminale, dentro la cartella `macOS`.
 |---|---|---|:---:|
 | M1 | `./toolbox.command` → **2** (analisi rapida) | la percentuale del disco è vicina a quella di Impostazioni di Sistema → Generali → Archiviazione (non un valore bassissimo tipo 2%) | |
 | M2 | **3** (pulizia sicura) | chiede la password una volta sola; esito OK o PARZIALE | |
-| M3 | **5** (manutenzione rete) | il rinnovo IP funziona in Wi-Fi o Ethernet normale. Con indirizzo impostato a mano deve dire "non usa DHCP: non toccato" | |
+| M3 | **5** (manutenzione rete) | si aprono le Impostazioni di Sistema con i passi per "Rinnova DHCP assegnato". Con indirizzo impostato a mano deve dire "non usa DHCP: non toccato" | |
 | M4 | **B** (backup di iPhone e iPad) | elenca i backup con nome, data e dimensione; premi INVIO senza scegliere niente | |
 | M5 | **V** (programmi all'avvio) | elenca agenti e servizi di terze parti; premi INVIO senza scegliere niente | |
 | M6 | `./crea-app.command`, poi apri **System Toolbox.app** | l'app compare con il logo e apre il Terminale con il menu | |

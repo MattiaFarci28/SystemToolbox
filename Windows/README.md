@@ -42,7 +42,7 @@ I parametri si possono combinare, per esempio `-Auto -DryRun`.
 - **Diagnosi guidata** (in alto): parti dal problema, "Internet non va", "il PC è lento" o
   "il disco è pieno", e la diagnosi controlla solo ciò che lo spiega. Se c'è un'operazione
   che può aiutare, viene già selezionata a sinistra.
-- **Programmi all'avvio** (in alto): spunta quelli che devono partire con Windows.
+- **Programmi all'avvio** (in alto): apre Impostazioni → App → Avvio.
 
 La finestra ricorda dimensione e ultima selezione, e segue il tema chiaro o scuro di Windows.
 
@@ -160,9 +160,9 @@ aumentano, compare un avviso prima che lo stato SMART diventi critico.
 
 ## Programmi all'avvio
 
-Si spengono e si riattivano con lo stesso meccanismo della scheda Avvio di Gestione attività:
-il programma non viene toccato, e si riattiva in qualsiasi momento da qui o da lì.
-L'effetto vale dal prossimo avvio.
+Il tasto V li elenca, attivi e spenti. Per spegnerli o riattivarli il tool apre
+Impostazioni → App → Avvio, la pagina che Microsoft documenta per farlo: il formato del
+registro in cui Windows salva questa scelta non è documentato, quindi il tool lo legge e basta.
 
 ## Configurazione
 

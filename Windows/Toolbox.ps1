@@ -363,14 +363,16 @@ function Invoke-ManutenzioneConsigliata {
 
 # ------------------------------------------------------------
 #   Programmi all'avvio
-#   Stesso meccanismo della scheda Avvio di Gestione attivita':
-#   il programma non viene toccato e si riattiva quando si vuole.
+#   Qui si elencano e basta. Accenderli e spegnerli si fa dalla
+#   pagina Impostazioni > App > Avvio, che Microsoft documenta:
+#   il formato del registro usato da Windows non lo e'.
+#   https://learn.microsoft.com/windows/apps/develop/launch/launch-settings
 # ------------------------------------------------------------
 function Invoke-GestioneAvvio {
     Clear-Host
     Write-Title 'Programmi all''avvio'
-    $voci = @(Get-SysStartup | Where-Object { $_.Chiave })
-    if ($voci.Count -eq 0) { Write-Host ''; Write-Ok 'Nessun programma all''avvio gestibile da qui.'; return }
+    $voci = @(Get-SysStartup)
+    if ($voci.Count -eq 0) { Write-Host ''; Write-Ok 'Nessun programma all''avvio.'; return }
     Write-Host ''
     $i = 1
     foreach ($v in $voci) {
@@ -384,39 +386,8 @@ function Invoke-GestioneAvvio {
         $i++
     }
     Write-Host ''
-    Write-Dim 'Indica i numeri da cambiare, separati da virgola: quelli attivi vengono spenti,'
-    Write-Dim 'quelli spenti riattivati. Il programma non viene toccato. Invio per uscire.'
-    Write-Host '  Selezione: ' -NoNewline -ForegroundColor White
-    $sel = Read-Host
-    if ([string]::IsNullOrWhiteSpace($sel)) { return }
-
-    $scelte = New-Object System.Collections.ArrayList
-    foreach ($pezzo in ($sel -split '[,; ]+')) {
-        $n = 0
-        if ($pezzo -and [int]::TryParse($pezzo, [ref]$n) -and $n -ge 1 -and $n -le $voci.Count) {
-            [void]$scelte.Add($voci[$n - 1])
-        } elseif ($pezzo) { Write-Warn ('Valore non valido: {0}' -f $pezzo) }
-    }
-    if ($scelte.Count -eq 0) { return }
-
-    Write-Host ''
-    foreach ($v in $scelte) {
-        $azione = 'spegnere  '
-        if (-not $v.Attivo) { $azione = 'riattivare' }
-        Write-Host ('   {0}  {1}' -f $azione, $v.Nome)
-    }
-    Write-Host ''
-    if (-not (Read-YesNo 'Procedere?')) { Write-Dim 'Annullato.'; return }
-    if ($script:Simula) { Write-Dim 'Simulazione attiva: nessuna modifica applicata.'; return }
-
-    $ok = 0; $ko = 0
-    foreach ($v in $scelte) {
-        try { Set-AvvioAttivo -Voce $v -Attivo (-not $v.Attivo); $ok++ }
-        catch { $ko++; Write-Err ('{0}: {1}' -f $v.Nome, $_.Exception.Message) }
-    }
-    Write-Host ''
-    if ($ok -gt 0) { Write-Ok ('{0} voci modificate: l''effetto vale dal prossimo avvio.' -f $ok) }
-    if ($ko -gt 0) { Write-Err ('{0} voci non modificate.' -f $ko) }
+    Write-Dim 'Per accenderli o spegnerli si usa Impostazioni > App > Avvio.'
+    if (Read-YesNo 'Aprire la pagina adesso?') { Open-ImpostazioniAvvio }
 }
 
 # ------------------------------------------------------------

@@ -414,7 +414,7 @@ $script:Xaml = @'
           <Button x:Name="BtnDiagnosi" Content="Diagnosi guidata" Style="{StaticResource Piccolo}" Margin="0,0,8,0"
                   ToolTip="Internet non va, PC lento, disco pieno: controlla solo cio' che spiega il problema"/>
           <Button x:Name="BtnAvvio" Content="Programmi all'avvio" Style="{StaticResource Piccolo}" Margin="0,0,16,0"
-                  ToolTip="Spegni o riattiva i programmi che partono con Windows"/>
+                  ToolTip="Apre Impostazioni, App, Avvio: si spengono o riattivano i programmi che partono con Windows"/>
           <Border x:Name="ChipAdmin" Background="@CHIPFONDO@" BorderBrush="@CHIPBORDO@" BorderThickness="1" CornerRadius="10" Padding="10,3" Margin="0,0,14,0">
             <TextBlock x:Name="TxtAdmin" Text="Amministratore" Foreground="@CHIPTESTO@" FontSize="11" FontFamily="Segoe UI"/>
           </Border>
@@ -1562,101 +1562,11 @@ function Select-DiagnosiGui {
 
 # ------------------------------------------------------------
 #   Programmi all'avvio
-#   Una casella per voce: spuntata = parte con Windows. Si
-#   applicano solo le differenze, dopo una conferma.
+#   Si apre Impostazioni > App > Avvio: e' la pagina che Microsoft
+#   documenta per accenderli e spegnerli (vedi Open-ImpostazioniAvvio).
 # ------------------------------------------------------------
 function Show-AvvioGui {
-    $s = $script:Sync
-    $voci = @(Get-SysStartup | Where-Object { $_.Chiave })
-    if ($voci.Count -eq 0) {
-        [void][System.Windows.MessageBox]::Show($s.Finestra, 'Nessun programma all''avvio gestibile da qui.', 'Programmi all''avvio')
-        return
+    if (-not (Open-ImpostazioniAvvio)) {
+        [void][System.Windows.MessageBox]::Show($script:Sync.Finestra, 'Non riesco ad aprire Impostazioni > App > Avvio.', 'Programmi all''avvio')
     }
-    $w = New-FinestraSecondaria -Titolo 'Programmi all''avvio'
-    $radice = New-Object System.Windows.Controls.StackPanel
-    $radice.Margin = New-Object System.Windows.Thickness(22)
-
-    $t = New-Object System.Windows.Controls.TextBlock
-    $t.Text = 'Spunta i programmi che devono partire con Windows. Il programma non viene toccato: si riattiva in qualsiasi momento, da qui o da Gestione attivita''. L''effetto vale dal prossimo avvio.'
-    $t.TextWrapping = 'Wrap'
-    $t.MaxWidth = 520
-    $t.Foreground = $s.TxtSottotitolo.Foreground
-    $t.Margin = New-Object System.Windows.Thickness(0, 0, 0, 12)
-    [void]$radice.Children.Add($t)
-
-    $elenco = New-Object System.Windows.Controls.StackPanel
-    $caselle = @()
-    foreach ($v in $voci) {
-        $c = New-Object System.Windows.Controls.CheckBox
-        # Testo semplice e non stringa: come contenuto diretto, WPF
-        # leggerebbe "_" come scorciatoia da tastiera e lo toglierebbe
-        # da nomi come "ApacheTomcatMonitor10.1_Tomcat10".
-        $etichetta = New-Object System.Windows.Controls.TextBlock
-        $etichetta.Text = ('{0}   ({1})' -f $v.Nome, (Format-StartupOrigin $v.Origine))
-        $c.Content = $etichetta
-        $c.IsChecked = [bool]$v.Attivo
-        $c.Margin = New-Object System.Windows.Thickness(0, 3, 0, 3)
-        try { $c.Style = $s.Finestra.FindResource([System.Windows.Controls.CheckBox]) } catch { }
-        [void]$elenco.Children.Add($c)
-        $caselle += $c
-    }
-    $scorri = New-Object System.Windows.Controls.ScrollViewer
-    $scorri.VerticalScrollBarVisibility = 'Auto'
-    $scorri.MaxHeight = 380
-    $scorri.Width = 540
-    $scorri.Content = $elenco
-    [void]$radice.Children.Add($scorri)
-
-    $barra = New-Object System.Windows.Controls.StackPanel
-    $barra.Orientation = 'Horizontal'
-    $barra.HorizontalAlignment = 'Right'
-    $barra.Margin = New-Object System.Windows.Thickness(0, 14, 0, 0)
-    $chiudi = New-PulsanteGui -Testo 'Chiudi'
-    $chiudi.Margin = New-Object System.Windows.Thickness(0, 0, 8, 0)
-    $chiudi.Add_Click({ param($m, $e) [System.Windows.Window]::GetWindow($m).Close() })
-    $applica = New-PulsanteGui -Testo 'Applica' -Primario
-    $applica.Add_Click({ param($m, $e) Invoke-ApplicaAvvioGui -Finestra ([System.Windows.Window]::GetWindow($m)) })
-    [void]$barra.Children.Add($chiudi)
-    [void]$barra.Children.Add($applica)
-    [void]$radice.Children.Add($barra)
-
-    $script:AvvioGui = @{ Voci = $voci; Caselle = $caselle }
-    $w.Content = $radice
-    [void]$w.ShowDialog()
-    $script:AvvioGui = $null
-}
-
-function Invoke-ApplicaAvvioGui {
-    param($Finestra)
-    $s = $script:Sync
-    $d = $script:AvvioGui
-    $cambi = @()
-    for ($i = 0; $i -lt $d.Voci.Count; $i++) {
-        $voluto = [bool]$d.Caselle[$i].IsChecked
-        if ($voluto -ne [bool]$d.Voci[$i].Attivo) { $cambi += @{ Voce = $d.Voci[$i]; Attivo = $voluto } }
-    }
-    if ($cambi.Count -eq 0) { $Finestra.Close(); return }
-
-    $nl = [Environment]::NewLine
-    $testo = 'Verranno modificati:' + $nl + $nl
-    foreach ($c in $cambi) {
-        $testo += ('  {0}  {1}' -f $(if ($c.Attivo) { 'riattivare' } else { 'spegnere  ' }), $c.Voce.Nome) + $nl
-    }
-    if ($s.ChkSimula.IsChecked) {
-        [void][System.Windows.MessageBox]::Show($Finestra, ($testo + $nl + 'Simulazione attiva: nessuna modifica applicata.'), 'Programmi all''avvio')
-        return
-    }
-    $r = [System.Windows.MessageBox]::Show($Finestra, ($testo + $nl + 'Procedere?'), 'Programmi all''avvio',
-            [System.Windows.MessageBoxButton]::YesNo, [System.Windows.MessageBoxImage]::Question)
-    if ($r -ne [System.Windows.MessageBoxResult]::Yes) { return }
-
-    $ok = 0; $errori = @()
-    foreach ($c in $cambi) {
-        try { Set-AvvioAttivo -Voce $c.Voce -Attivo $c.Attivo; $ok++ }
-        catch { $errori += ('{0}: {1}' -f $c.Voce.Nome, $_.Exception.Message) }
-    }
-    $esito = ('{0} voci modificate. L''effetto vale dal prossimo avvio.' -f $ok)
-    if ($errori.Count -gt 0) { $esito += $nl + $nl + 'Non modificate:' + $nl + ($errori -join $nl) }
-    [void][System.Windows.MessageBox]::Show($Finestra, $esito, 'Programmi all''avvio')
-    $Finestra.Close()
 }

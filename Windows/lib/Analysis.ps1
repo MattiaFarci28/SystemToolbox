@@ -971,11 +971,10 @@ function Get-SysNetwork {
 }
 
 # ------------------------------------------------------------
-#   Programmi all'avvio: attivazione e disattivazione
-#   E' lo stesso meccanismo della scheda Avvio di Gestione
-#   attivita': un valore binario nelle chiavi StartupApproved.
-#   Il programma non viene toccato, la voce nel registro di avvio
-#   resta al suo posto, e si riattiva in qualsiasi momento.
+#   Programmi all'avvio: stato attivo o spento
+#   Windows lo registra in un valore binario delle chiavi
+#   StartupApproved. Qui lo si legge soltanto, per mostrarlo:
+#   nessuna scrittura nel registro.
 # ------------------------------------------------------------
 function Get-ApprovazioneAvvio {
     param([string]$Origine, [string]$Nome, [string]$Comando, [string]$Utente)
@@ -1015,22 +1014,19 @@ function Get-StatoApprovazione {
     return $null
 }
 
-function Set-AvvioAttivo {
-    param([Parameter(Mandatory=$true)]$Voce, [bool]$Attivo)
-    if (-not $Voce.Chiave) { throw 'voce non gestibile da qui' }
-    # 12 byte: 02 = attivo; 03 seguito dall'ora della disattivazione
-    # (FILETIME, dal quinto byte) = disattivato. E' il formato che
-    # scrive Gestione attivita'.
-    $dati = New-Object byte[] 12
-    if ($Attivo) {
-        $dati[0] = 2
-    } else {
-        $dati[0] = 3
-        [BitConverter]::GetBytes((Get-Date).ToFileTime()).CopyTo($dati, 4)
+# Accendere e spegnere si lascia a Impostazioni > App > Avvio:
+# l'indirizzo ms-settings:startupapps e' documentato da Microsoft,
+# il formato dei valori nel registro no.
+# https://learn.microsoft.com/windows/apps/develop/launch/launch-settings
+function Open-ImpostazioniAvvio {
+    try {
+        Start-Process 'ms-settings:startupapps' -ErrorAction Stop
+        Write-Log 'Aperta la pagina Impostazioni > App > Avvio' 'INFO'
+        return $true
+    } catch {
+        Write-Log ('Impostazioni > App > Avvio non aperta: {0}' -f $_.Exception.Message) 'WARN'
+        return $false
     }
-    if (-not (Test-Path -LiteralPath $Voce.Chiave)) { New-Item -Path $Voce.Chiave -Force | Out-Null }
-    New-ItemProperty -LiteralPath $Voce.Chiave -Name $Voce.Valore -PropertyType Binary -Value $dati -Force | Out-Null
-    Write-Log ('Avvio: "{0}" {1}' -f $Voce.Nome, $(if ($Attivo) { 'riattivato' } else { 'disattivato' })) 'INFO'
 }
 
 # ------------------------------------------------------------
