@@ -125,8 +125,11 @@ if printf '%s\n' "$OUT" | grep -q 'FALLITO'; then
 else
     case "$rc" in
         0|1) ok "$AVVIO --auto: uscita $rc" ;;
-        2)   ok "$AVVIO --auto: uscita 2 (criticita' dell'analisi, righe qui sotto)"
-             printf '%s\n' "$OUT" | grep -F '[X]' | head -8 | sed 's/^/      /' ;;
+        2)   ok "$AVVIO --auto: uscita 2 (criticita' dell'analisi, dettagli qui sotto)"
+             # Il JSON elenca gli avvisi gravi e l'esito di ogni
+             # operazione: e' il modo piu' preciso per sapere il perche'.
+             bash "$AVVIO" --auto --json < /dev/null 2>/dev/null \
+                 | grep -E '"avvisi"|"esito": *"FALLITO"|"esito":"FALLITO"' | sed 's/^/      /' ;;
         *)   ko "$AVVIO --auto: uscita $rc"
              printf '%s\n' "$OUT" | tail -15 | sed 's/^/      /' ;;
     esac

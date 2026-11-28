@@ -41,6 +41,15 @@ jobs:
           "Segnalazioni: $($r.Count)"
           if ($r.Count -gt 0) { exit 1 }
 
+      # Tempi di ogni sezione dell'analisi (sola lettura), prima che
+      # le operazioni vere ripuliscano la macchina. Solo informativo:
+      # serve a confrontare il prima e il dopo delle ottimizzazioni.
+      - name: Tempi
+        shell: powershell
+        continue-on-error: true
+        run: |
+          & .\Windows\test\Misura.ps1
+
       # Lo strumento vero, senza simulazione: la macchina di GitHub
       # viene buttata via dopo la prova. Lo script si rifiuta di
       # partire fuori da GitHub Actions.
@@ -63,6 +72,11 @@ jobs:
         working-directory: macOS
         run: /bin/bash test/collaudo.sh
 
+      - name: Tempi
+        working-directory: macOS
+        continue-on-error: true
+        run: /bin/bash test/misura.sh
+
       - name: Operazioni vere
         working-directory: macOS
         timeout-minutes: 30
@@ -77,6 +91,11 @@ jobs:
       - name: Suite di collaudo
         working-directory: Linux Ubuntu
         run: bash test/collaudo.sh
+
+      - name: Tempi
+        working-directory: Linux Ubuntu
+        continue-on-error: true
+        run: bash test/misura.sh
 
       - name: Operazioni vere
         working-directory: Linux Ubuntu
