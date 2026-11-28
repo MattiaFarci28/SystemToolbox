@@ -218,6 +218,7 @@ task_clean_apt_cache() {
     local lib=$((prima - dopo)); [ "$lib" -lt 0 ] && lib=0
     CTX_BYTES=$((CTX_BYTES + lib))
     ctx_note "Cache $TB_PKG_NOME svuotata: $(format_bytes "$lib") liberati"
+    return 0
 }
 
 task_clean_journal() {
@@ -235,20 +236,24 @@ task_clean_journal() {
     local lib=$((prima - dopo)); [ "$lib" -lt 0 ] && lib=0
     CTX_BYTES=$((CTX_BYTES + lib))
     ctx_note "Journal ridotto: $(format_bytes "$lib") liberati, ultimi 14 giorni conservati"
+    return 0
 }
 
 task_clean_cache_user() {
     clear_folder_content "$TB_HOME/.cache" "Cache utente" 0
+    return 0
 }
 
 task_clean_thumbnails() {
     clear_folder_content "$TB_HOME/.cache/thumbnails" "Miniature" 0
     clear_folder_content "$TB_HOME/.thumbnails" "Miniature (percorso storico)" 0
+    return 0
 }
 
 task_clean_trash() {
     clear_folder_content "$TB_HOME/.local/share/Trash/files" "Cestino - file" 0
     clear_folder_content "$TB_HOME/.local/share/Trash/info" "Cestino - metadati" 0
+    return 0
 }
 
 # ============================================================
@@ -415,6 +420,7 @@ task_clean_flatpak() {
     local lib=$(( $(free_space_bytes) - prima )); [ "$lib" -lt 0 ] && lib=0
     CTX_BYTES=$((CTX_BYTES + lib))
     ctx_note "Runtime inutilizzati rimossi: $(format_bytes "$lib") liberati"
+    return 0
 }
 
 task_clean_docker() {
@@ -432,6 +438,7 @@ task_clean_docker() {
     local lib=$(( $(free_space_bytes) - prima )); [ "$lib" -lt 0 ] && lib=0
     CTX_BYTES=$((CTX_BYTES + lib))
     ctx_note "Docker ripulito: $(format_bytes "$lib") liberati"
+    return 0
 }
 
 task_clean_devcache() {

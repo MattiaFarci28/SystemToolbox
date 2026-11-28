@@ -84,6 +84,17 @@ for s in Consigliata PuliziaSicura PuliziaAvanzata Rete ReteReset ReteRiavvio Ag
 done
 [ "$SET_ERR" -eq 0 ] && ok "insiemi predefiniti coerenti"
 
+# Ogni operazione termina con un "return" esplicito. Senza, l'esito
+# dipende dall'ultima riga: con "[ -d cartella ] && pulisci" una
+# cartella assente faceva risultare FALLITA un'operazione riuscita.
+SENZA_RETURN=$(awk '
+    /^task_(clean|net|maint|upd)_[a-z_]+\(\) *\{/ { n=$1; sub(/\(\).*/, "", n); d=1; u=""; next }
+    d && /^\}/ { if (u !~ /^[[:space:]]*return[[:space:]]/) print n; d=0; next }
+    d && /^[[:space:]]*#/ { next }
+    d && /[^[:space:]]/ { u=$0 }
+' lib/tasks.sh | tr '\n' ' ')
+check "ogni operazione termina con return esplicito" "$SENZA_RETURN" ""
+
 # ------------------------------------------------------------
 titolo "Formattazione (senza awk)"
 check "format_bytes 0"           "$(format_bytes 0)"           "0 B"

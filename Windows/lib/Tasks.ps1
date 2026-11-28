@@ -169,28 +169,44 @@ $script:TaskRegistry = @(
         foreach ($d in $dischi) {
             $lettera = $d.DeviceID.TrimEnd(':')
             $cartella = Join-Path (Join-Path ($d.DeviceID + '\') '$Recycle.Bin') $sid
-            $prima = Measure-FolderBytes $cartella
+            # Il contenuto vero del cestino: desktop.ini e' un file di
+            # sistema che c'e' sempre, anche a cestino vuoto. Contarlo
+            # faceva sembrare pieno un cestino vuoto e chiamare lo
+            # svuotamento, a cui Windows risponde con un errore.
+            $voci = @(Get-ChildItem -LiteralPath $cartella -Force -ErrorAction SilentlyContinue |
+                      Where-Object { $_.Name -ne 'desktop.ini' })
+            $prima = [long]0
+            foreach ($v in $voci) {
+                if ($v.PSIsContainer) { $prima += Measure-FolderBytes $v.FullName } else { $prima += $v.Length }
+            }
 
             if ($ctx.DryRun) {
                 $ctx.Note(('Cestino {0}: {1} eliminabili (simulazione)' -f $d.DeviceID, (Format-Bytes $prima)))
                 $ctx.Bytes += $prima
                 continue
             }
-            if ($prima -le 0) {
+            if ($voci.Count -eq 0) {
                 $ctx.Note(('Cestino {0}: gia'' vuoto' -f $d.DeviceID))
                 continue
             }
             try {
                 Clear-RecycleBin -DriveLetter $lettera -Force -Confirm:$false -ErrorAction Stop
             } catch {
-                # Windows solleva un errore anche quando il cestino
-                # e' semplicemente vuoto: non e' un fallimento.
-                if ($_.Exception.Message -notmatch 'vuot|empty|0x80070091') {
+                # Windows a volte segnala un errore anche quando il cestino
+                # e' stato svuotato, o era gia' vuoto. Conta il risultato:
+                # se dentro non resta niente, non e' un fallimento.
+                $restano = @(Get-ChildItem -LiteralPath $cartella -Force -ErrorAction SilentlyContinue |
+                             Where-Object { $_.Name -ne 'desktop.ini' })
+                if ($restano.Count -gt 0 -and $_.Exception.Message -notmatch 'vuot|empty|0x80070091') {
                     $ctx.Fail(('Cestino {0}: {1}' -f $d.DeviceID, $_.Exception.Message))
                     continue
                 }
             }
-            $dopo = Measure-FolderBytes $cartella
+            $dopo = [long]0
+            foreach ($v in @(Get-ChildItem -LiteralPath $cartella -Force -ErrorAction SilentlyContinue |
+                             Where-Object { $_.Name -ne 'desktop.ini' })) {
+                if ($v.PSIsContainer) { $dopo += Measure-FolderBytes $v.FullName } else { $dopo += $v.Length }
+            }
             $lib  = $prima - $dopo
             if ($lib -lt 0) { $lib = 0 }
             $ctx.Bytes += $lib

@@ -206,7 +206,7 @@ Non usate su Linux: `avvii_avviso` (conta il tempo di avvio), `app_escluse` (i p
 bash test/collaudo.sh
 ```
 
-175 controlli, non toccano il sistema.
+176 controlli, non toccano il sistema.
 Lo strumento è stato provato anche su un PC Ubuntu reale.
 Su GitHub, `test/distro.sh` esegue i veri apt, dnf e pacman in container Ubuntu, Fedora e Arch.
 

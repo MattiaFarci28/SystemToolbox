@@ -206,6 +206,7 @@ task_clean_trash() {
     else
         ctx_note "Cestini di altri utenti saltati: privilegi non disponibili"
     fi
+    return 0
 }
 
 task_clean_crashreports() {
@@ -214,6 +215,7 @@ task_clean_crashreports() {
         clear_folder_content "/Library/Logs/DiagnosticReports" "Crash report di sistema" 1
     fi
     clear_folder_content "$TB_HOME/Library/Application Support/CrashReporter" "CrashReporter" 0
+    return 0
 }
 
 task_clean_logs() {
@@ -229,6 +231,7 @@ task_clean_logs() {
         clear_folder_content "$d" "Log $(basename "$d")" 0
     done
     ctx_note "Registro unificato di macOS non toccato: e' diagnostica, non spazzatura"
+    return 0
 }
 
 task_clean_browsercache() {
@@ -247,6 +250,7 @@ task_clean_browsercache() {
     for p in "$TB_HOME/Library/Caches/Firefox/Profiles"/*; do
         [ -d "$p" ] && clear_folder_content "$p" "Firefox $(basename "$p")" 0
     done
+    return 0
 }
 
 task_clean_quicklook() {
@@ -259,6 +263,7 @@ task_clean_quicklook() {
     else
         ctx_fail "qlmanage non ha potuto rigenerare la cache"
     fi
+    return 0
 }
 
 task_clean_mail() {
@@ -268,6 +273,7 @@ task_clean_mail() {
     else
         ctx_note "Nessuna cartella allegati di Mail trovata"
     fi
+    return 0
 }
 
 # ============================================================
@@ -276,11 +282,13 @@ task_clean_mail() {
 
 task_clean_cache_user() {
     clear_folder_content "$TB_HOME/Library/Caches" "Cache utente" 0
+    return 0
 }
 
 task_clean_cache_system() {
     clear_folder_content "/Library/Caches" "Cache di sistema" 1
     ctx_note "Le cartelle protette da SIP restano intatte: e' il comportamento atteso"
+    return 0
 }
 
 task_clean_snapshots() {
@@ -330,6 +338,7 @@ task_clean_xcode() {
                 ctx_note "Simulatori non piu' disponibili rimossi"
         fi
     fi
+    return 0
 }
 
 task_clean_devcache() {
@@ -367,6 +376,7 @@ task_clean_homebrew() {
     local lib=$((dopo - prima)); [ "$lib" -lt 0 ] && lib=0
     CTX_BYTES=$((CTX_BYTES + lib))
     ctx_note "Homebrew ripulito: $(format_bytes "$lib") liberati"
+    return 0
 }
 
 task_clean_docker() {
@@ -389,6 +399,7 @@ task_clean_docker() {
     local lib=$((dopo - prima)); [ "$lib" -lt 0 ] && lib=0
     CTX_BYTES=$((CTX_BYTES + lib))
     ctx_note "Docker ripulito: $(format_bytes "$lib") liberati"
+    return 0
 }
 
 task_clean_fontcache() {
@@ -399,6 +410,7 @@ task_clean_fontcache() {
     as_user atsutil databases -removeUser >/dev/null 2>&1
     as_root atsutil databases -remove >/dev/null 2>&1
     ctx_note "Cache dei font ricostruita: l'effetto pieno si vede dopo il riavvio"
+    return 0
 }
 
 # ============================================================
@@ -484,6 +496,7 @@ task_net_reset() {
     ctx_note "Copia di sicurezza in $backup"
     ctx_note "Configurazione di rete azzerata: effettiva dopo il riavvio"
     CTX_REBOOT=1
+    return 0
 }
 
 # ============================================================
@@ -501,10 +514,14 @@ task_maint_launchservices() {
         return 0
     fi
     ctx_note "Ricostruzione in corso, puo' richiedere un minuto..."
-    if as_user "$ls" -kill -r -domain local -domain system -domain user >/dev/null 2>&1; then
+    # lsregister e' uno strumento interno di macOS, senza manuale: se
+    # fallisce si riporta la sua prima riga di messaggio, altrimenti
+    # non ci sarebbe modo di capire il perche'.
+    local out
+    if out=$(as_user "$ls" -kill -r -domain local -domain system -domain user 2>&1); then
         ctx_note "Database ricostruito: il menu Apri con non avra' piu' duplicati"
     else
-        ctx_fail "Ricostruzione non riuscita"
+        ctx_fail "Ricostruzione non riuscita: $(printf '%s\n' "$out" | grep -m1 '[^[:space:]]')"
     fi
     return 0
 }
