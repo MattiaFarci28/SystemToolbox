@@ -103,7 +103,7 @@ Lavora solo nella tua cartella personale. Si toglie con `./installa-scorciatoie.
 | Livello | Operazione | Tempo | Note |
 |---|---|---|---|
 | avanzato | Aggiorna i pacchetti | 10 min | mostra l'elenco prima |
-| avanzato | Aggiornamento completo | 15 min | **può rimuovere pacchetti**: le rimozioni sono mostrate a parte |
+| avanzato | Aggiornamento completo | 9–21 min | **può rimuovere pacchetti**: le rimozioni sono mostrate a parte |
 | avanzato | Aggiorna gli snap | 5 min | |
 | avanzato | Aggiorna le app Flatpak | 5 min | |
 | avanzato | Ripara i pacchetti danneggiati | 2 min | non rimuove mai pacchetti: se servirebbe, si ferma e li elenca |

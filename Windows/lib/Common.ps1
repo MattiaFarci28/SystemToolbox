@@ -11,7 +11,7 @@
 
 Set-StrictMode -Version 1.0
 
-$script:TB_VERSIONE = '1.1.0'
+$script:TB_VERSIONE = '1.2.0'
 
 # ============================================================
 #   RILANCIO

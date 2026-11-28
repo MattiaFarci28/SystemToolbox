@@ -121,7 +121,7 @@ La finestra ricorda dimensione e ultima selezione, e segue il tema chiaro o scur
 
 | Livello | Operazione | Tempo | Note |
 |---|---|---|---|
-| avanzato | Installa gli aggiornamenti di Windows | 15 min | mostra l'elenco prima; può richiedere il riavvio |
+| avanzato | Installa gli aggiornamenti di Windows | 9–21 min | mostra l'elenco prima; può richiedere il riavvio |
 | avanzato | Aggiorna le applicazioni (winget) | 10 min | mostra l'elenco prima; quelle in `app_escluse` restano ferme |
 
 ### Insiemi predefiniti
@@ -134,7 +134,7 @@ La finestra ricorda dimensione e ultima selezione, e segue il tema chiaro o scur
 | Rete leggera | DNS, ARP, IP, registrazione DNS | ~40 s |
 | Rete reset | Winsock, TCP/IP, IPv6 | ~25 s + riavvio |
 | Manutenzione | punto di ripristino, TRIM, SFC, DISM | 22–52 min |
-| Aggiorna tutto | Windows Update + applicazioni | 25 min circa |
+| Aggiorna tutto | Windows Update + applicazioni | 15–35 min |
 
 Usa **Rete leggera** di routine. **Rete reset** serve solo quando la connessione non funziona.
 

@@ -36,6 +36,17 @@ avviso_add() {
     exit_avviso
     return 0
 }
+# Momento dell'accensione, in secondi dal 1970.
+# "sysctl -n kern.boottime" risponde per esempio:
+#   { sec = 1764000000, usec = 123456 } Thu Nov 27 10:00:00 2026
+# Va preso il numero subito dopo "{ sec = ". Prima l'espressione era
+# ".*sec = ", che prende l'ULTIMO "sec = ": quello dentro "usec". Si
+# leggevano i microsecondi come secondi, e il Mac risultava acceso da
+# oltre 20.000 giorni su qualunque computer.
+mac_avvio_epoch() {
+    sysctl -n kern.boottime 2>/dev/null | sed -n 's/^{ *sec = \([0-9][0-9]*\).*/\1/p'
+}
+
 # Per le criticita' vere: alzano il codice di uscita a 2.
 avviso_grave() {
     AVVISI="${AVVISI}${1}"$'\n'
@@ -130,7 +141,7 @@ show_system() {
     ui_kv "Architettura" "$(uname -m)$( [ "$TB_ARCH" = "apple" ] && echo '  (Apple Silicon)' || echo '  (Intel)' )"
     ui_kv "Utente" "$TB_USER"
 
-    boot=$(sysctl -n kern.boottime 2>/dev/null | sed -n 's/.*sec = \([0-9]*\).*/\1/p')
+    boot=$(mac_avvio_epoch)
     if [ -n "$boot" ]; then
         up_sec=$(( $(date +%s) - boot ))
         local g=$((up_sec / 86400)) h=$(( (up_sec % 86400) / 3600 )) m=$(( (up_sec % 3600) / 60 ))
@@ -213,12 +224,19 @@ show_disk() {
         smart=$(echo "$sp" | awk -F': ' '/S\.M\.A\.R\.T\./{gsub(/^ +/,"",$2); print $2; exit}')
     fi
     if [ -n "$smart" ]; then
-        if [ "$smart" = "Verified" ]; then
-            ui_kvc "Stato SMART" "$C_GREEN" "$smart"
-        else
-            ui_kvc "Stato SMART" "$C_RED" "$smart"
-            avviso_grave "SMART del disco riporta '$smart': fai subito un backup."
-        fi
+        case "$smart" in
+            Verified)
+                ui_kvc "Stato SMART" "$C_GREEN" "$smart" ;;
+            "Not Supported")
+                # Il disco non fornisce lo stato SMART (dischi esterni,
+                # macchine virtuali): e' un'informazione mancante, non un
+                # guasto. Prima finiva fra le criticita' con "fai subito
+                # un backup".
+                ui_kv "Stato SMART" "non disponibile per questo disco" ;;
+            *)
+                ui_kvc "Stato SMART" "$C_RED" "$smart"
+                avviso_grave "SMART del disco riporta '$smart': fai subito un backup." ;;
+        esac
         # Su macOS diskutil espone solo lo stato complessivo: lo
         # storico registra quello, e un cambio di stato emerge.
         smart_mostra_andamento "di avvio" "$smart" - -
@@ -901,7 +919,7 @@ diagnosi_lento() {
         diag_passo ok "Nessun programma blocca il processore"
     fi
 
-    boot=$(sysctl -n kern.boottime 2>/dev/null | sed -n 's/.*sec = \([0-9]*\).*/\1/p')
+    boot=$(mac_avvio_epoch)
     if [ -n "$boot" ]; then
         giorni=$(( ($(date +%s) - boot) / 86400 ))
         if [ "$giorni" -ge "$CFG_uptime_avviso_giorni" ]; then

@@ -651,6 +651,23 @@ OUT=$(show_disk 2>/dev/null | head -6)
 case "$OUT" in *" 90%"*) ok "disco: occupato = totale - libero (90%)" ;; *) ko "disco: percentuale sbagliata su APFS" ;; esac
 unset -f df
 
+# Ora di accensione: va letto "sec", non "usec" (prima risultavano
+# oltre 20.000 giorni di accensione su qualunque Mac).
+ACC=$(( $(date +%s) - 3 * 86400 ))
+sysctl() { printf '{ sec = %s, usec = 654321 } Thu Nov 27 10:00:00 2026\n' "$ACC"; }
+check "accensione: letti i secondi, non i microsecondi" "$(mac_avvio_epoch)" "$ACC"
+unset -f sysctl
+
+# SMART "Not Supported" non e' un guasto: niente criticita'.
+df() { printf 'Filesystem 1024-blocks Used Available Capacity Mounted\n/dev/disk3s1s1 500000000 10000000 250000000 4%% /\n'; }
+diskutil() { printf '   SMART Status:              Not Supported\n'; }
+TB_EXIT=0; show_disk >/dev/null 2>&1
+check "SMART non disponibile: nessuna criticita'" "$TB_EXIT" "0"
+diskutil() { printf '   SMART Status:              Failing\n'; }
+TB_EXIT=0; show_disk >/dev/null 2>&1
+check "SMART in errore: criticita'" "$TB_EXIT" "2"
+unset -f df diskutil; TB_EXIT=0
+
 # ------------------------------------------------------------
 titolo "Conversione da forma leggibile a byte"
 # Serve per i comandi che rispondono gia' in "1.1G": rimisurarli

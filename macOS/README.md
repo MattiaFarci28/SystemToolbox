@@ -99,7 +99,7 @@ Se sposti la cartella, rilancia il comando.
 | sicuro | Ricostruisci il database "Apri con" | 1 min | toglie i doppioni dal menu |
 | sicuro | Verifica il volume di avvio | 3 min | solo controllo |
 | avanzato | Reindicizza Spotlight | 1 min | il Mac rallenta per alcune ore |
-| avanzato | Installa gli aggiornamenti di macOS | 20 min | può riavviare |
+| avanzato | Installa gli aggiornamenti di macOS | 12–28 min | può riavviare |
 | avanzato | Aggiorna i programmi di Homebrew | 10 min | quelli in `app_escluse` restano fermi |
 | SCONSIG. | Libera la memoria (purge) | 20 s | **peggiora** le prestazioni |
 
@@ -112,7 +112,7 @@ Se sposti la cartella, rilancia il comando.
 | Pulizia avanzata | le 7 voci `[avanzato]`, Docker escluso | ~8 min |
 | Manutenzione rete | DNS + rinnovo IP | ~35 s |
 | Manutenzione sistema | "Apri con", verifica disco, Spotlight, aggiornamenti | 15–35 min |
-| Aggiorna tutto | aggiornamenti di macOS + Homebrew | 30 min circa |
+| Aggiorna tutto | aggiornamenti di macOS + Homebrew | 18–42 min |
 
 Docker e purge si scelgono solo dalla selezione personalizzata (`P`).
 
@@ -195,7 +195,7 @@ Non usate su macOS: `ram_critica` (conta lo swap), `avanzamento` (esiste solo su
 bash test/collaudo.sh
 ```
 
-153 controlli, non toccano il sistema.
+156 controlli, non toccano il sistema.
 Lo strumento è stato provato anche su un Mac reale.
 
 ## File

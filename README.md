@@ -77,7 +77,7 @@ Copialo togliendo `.esempio` e modifica le soglie. Il file viene solo letto, mai
 | Linguaggio | PowerShell 5.1 | bash 3.2 | bash 4+ |
 | Interfaccia | finestra grafica + menu testuale | menu testuale + app per il Dock | menu testuale + finestre zenity |
 | Operazioni | 29 | 23 | 21 |
-| Controlli di collaudo | 108 | 153 | 176 |
+| Controlli di collaudo | 108 | 156 | 176 |
 
 ## Cosa non fa
 
